@@ -1,31 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Manrope:wght@400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --font-sans: "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Manrope", system-ui, sans-serif;
+  --font-display: "Cormorant Garamond", Georgia, serif;
 }
 
 body {
   @apply bg-brand-50 text-brand-900;
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+
 .btn {
-  @apply inline-flex items-center justify-center rounded-full px-5 py-2.5 text-sm font-medium transition-colors;
+  @apply inline-flex items-center justify-center rounded-full px-6 py-2.5 text-sm font-medium tracking-wide transition-colors;
 }
 
 .btn-primary {
-  @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  @apply btn bg-brand-800 text-gold-100 hover:bg-brand-900;
 }
 
 .btn-outline {
   @apply btn border border-brand-300 text-brand-700 hover:bg-brand-100;
 }
 
+.btn-gold {
+  @apply btn bg-gold-400 text-brand-900 hover:bg-gold-500;
+}
+
 .input {
-  @apply w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500;
+  @apply w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm outline-none focus:border-gold-400;
 }
 
 .card {
   @apply rounded-2xl border border-brand-100 bg-white shadow-sm;
+}
+
+.card-dark {
+  @apply rounded-2xl bg-brand-900 text-brand-50 shadow-sm;
 }

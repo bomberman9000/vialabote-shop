@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  @apply bg-brand-50 text-brand-900;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-full px-5 py-2.5 text-sm font-medium transition-colors;
+}
+
+.btn-primary {
+  @apply btn bg-brand-600 text-white hover:bg-brand-700;
+}
+
+.btn-outline {
+  @apply btn border border-brand-300 text-brand-700 hover:bg-brand-100;
+}
+
+.input {
+  @apply w-full rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500;
+}
+
+.card {
+  @apply rounded-2xl border border-brand-100 bg-white shadow-sm;
+}

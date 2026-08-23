@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ProductCard } from "@/components/product-card";
 import { CONCERNS } from "@/lib/concerns";
 import { RoutineFinderTrigger } from "@/components/routine-finder/routine-finder-trigger";
+import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function HomePage() {
   const products = await prisma.product.findMany({
     where: { isActive: true },
     orderBy: { createdAt: "desc" },
+    include: { discount: true },
   });
 
   return (
@@ -110,21 +112,24 @@ export default async function HomePage() {
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-6">
-            {products.map((p) => (
-              <ProductCard
-                key={p.id}
-                product={{
-                  id: p.id,
-                  slug: p.slug,
-                  title: p.title,
-                  subtitle: p.subtitle,
-                  price: p.price,
-                  oldPrice: p.oldPrice,
-                  imageUrl: p.imageUrl,
-                  stock: p.stock,
-                }}
-              />
-            ))}
+            {products.map((p) => {
+              const displayPrice = resolveDisplayPrice(p);
+              return (
+                <ProductCard
+                  key={p.id}
+                  product={{
+                    id: p.id,
+                    slug: p.slug,
+                    title: p.title,
+                    subtitle: p.subtitle,
+                    price: displayPrice.price,
+                    oldPrice: displayPrice.compareAtPrice,
+                    imageUrl: p.imageUrl,
+                    stock: p.stock,
+                  }}
+                />
+              );
+            })}
           </div>
         )}
       </section>

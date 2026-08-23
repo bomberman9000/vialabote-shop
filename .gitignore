@@ -14,3 +14,9 @@ prisma/dev.db
 .DS_Store
 npm-debug.log*
 tsconfig.tsbuildinfo
+
+# LocalMediaStorage — загруженные файлы, не часть репозитория.
+# TODO(production): ephemeral filesystem на большинстве serverless-хостингов
+# (см. security review) — перед реальным деплоем заменить на S3-совместимый
+# MediaStorage adapter, интерфейс уже это позволяет без правок бизнес-логики.
+public/uploads/

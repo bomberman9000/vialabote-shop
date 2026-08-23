@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/money";
 import { AddToCartButton } from "@/components/add-to-cart-button";
 import { ProductCard } from "@/components/product-card";
+import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ function parseLines(value: string | null): string[] {
 export default async function ProductPage({ params }: { params: { slug: string } }) {
   const product = await prisma.product.findUnique({
     where: { slug: params.slug },
-    include: { category: true },
+    include: { category: true, discount: true },
   });
 
   if (!product || !product.isActive) notFound();
@@ -45,10 +46,12 @@ export default async function ProductPage({ params }: { params: { slug: string }
       id: { not: product.id },
     },
     take: 4,
+    include: { discount: true },
   });
 
   const actives = parseLines(product.activeIngredients);
   const howToUseSteps = parseLines(product.howToUse);
+  const displayPrice = resolveDisplayPrice(product);
 
   return (
     <div className="flex flex-col gap-14">
@@ -83,10 +86,10 @@ export default async function ProductPage({ params }: { params: { slug: string }
 
           <div className="flex items-baseline gap-3">
             <span className="text-2xl font-semibold text-brand-800">
-              {formatPrice(product.price)}
+              {formatPrice(displayPrice.price)}
             </span>
-            {product.oldPrice ? (
-              <span className="text-brand-400 line-through">{formatPrice(product.oldPrice)}</span>
+            {displayPrice.compareAtPrice ? (
+              <span className="text-brand-400 line-through">{formatPrice(displayPrice.compareAtPrice)}</span>
             ) : null}
             {product.volume ? <span className="text-sm text-brand-400">{product.volume}</span> : null}
           </div>
@@ -117,7 +120,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
               id: product.id,
               slug: product.slug,
               title: product.title,
-              price: product.price,
+              price: displayPrice.price,
               imageUrl: product.imageUrl,
               stock: product.stock,
             }}
@@ -173,22 +176,25 @@ export default async function ProductPage({ params }: { params: { slug: string }
         <section>
           <h2 className="mb-6 font-display text-2xl text-brand-800">Дополните уход</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {related.map((p) => (
-              <ProductCard
-                key={p.id}
-                product={{
-                  id: p.id,
-                  slug: p.slug,
-                  title: p.title,
-                  subtitle: p.subtitle,
-                  badge: p.badge,
-                  price: p.price,
-                  oldPrice: p.oldPrice,
-                  imageUrl: p.imageUrl,
-                  stock: p.stock,
-                }}
-              />
-            ))}
+            {related.map((p) => {
+              const relatedPrice = resolveDisplayPrice(p);
+              return (
+                <ProductCard
+                  key={p.id}
+                  product={{
+                    id: p.id,
+                    slug: p.slug,
+                    title: p.title,
+                    subtitle: p.subtitle,
+                    badge: p.badge,
+                    price: relatedPrice.price,
+                    oldPrice: relatedPrice.compareAtPrice,
+                    imageUrl: p.imageUrl,
+                    stock: p.stock,
+                  }}
+                />
+              );
+            })}
           </div>
         </section>
       ) : null}

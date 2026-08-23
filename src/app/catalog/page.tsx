@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ProductCard } from "@/components/product-card";
 import { CONCERNS, getConcern } from "@/lib/concerns";
+import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 import { SortSelect } from "./sort-select";
 
 export const dynamic = "force-dynamic";
@@ -53,10 +54,22 @@ export default async function CatalogPage({
     ...(concern ? { slug: { in: concern.productSlugs } } : {}),
   };
 
-  const products = await prisma.product.findMany({
+  // Сортировка по цене — по effective price (с учётом скидки), а не по
+  // сырому Product.price, иначе порядок в UI разойдётся с тем, что реально
+  // показано. Сортируем в памяти после расчёта displayPrice для каждого
+  // товара (каталог не настолько велик, чтобы это было проблемой).
+  const rawProducts = await prisma.product.findMany({
     where,
-    orderBy: sort.orderBy,
+    orderBy: sort.value === "new" ? sort.orderBy : { createdAt: "desc" },
+    include: { discount: true },
   });
+  const products = rawProducts
+    .map((p) => ({ product: p, displayPrice: resolveDisplayPrice(p) }))
+    .sort((a, b) => {
+      if (sort.value === "price-asc") return a.displayPrice.price - b.displayPrice.price;
+      if (sort.value === "price-desc") return b.displayPrice.price - a.displayPrice.price;
+      return 0; // "new" — порядок уже задан orderBy выше
+    });
 
   return (
     <div className="flex flex-col gap-6">
@@ -105,7 +118,7 @@ export default async function CatalogPage({
         <p className="text-brand-500">По этому фильтру пока нет товаров.</p>
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-          {products.map((p) => (
+          {products.map(({ product: p, displayPrice }) => (
             <ProductCard
               key={p.id}
               product={{
@@ -114,8 +127,8 @@ export default async function CatalogPage({
                 title: p.title,
                 subtitle: p.subtitle,
                 badge: p.badge,
-                price: p.price,
-                oldPrice: p.oldPrice,
+                price: displayPrice.price,
+                oldPrice: displayPrice.compareAtPrice,
                 imageUrl: p.imageUrl,
                 stock: p.stock,
               }}

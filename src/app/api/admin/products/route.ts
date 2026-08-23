@@ -1,36 +1,28 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getWebAdminActor, adminErrorResponse } from "@/lib/admin/api-response";
+import { createProduct, publishProduct } from "@/lib/admin/commands/product";
 
+// Категория — не часть типизированного Admin Command Layer (никогда не
+// участвует в price/lifecycle-логике), поэтому upsert по slug остаётся
+// прямой Prisma-операцией. Сам Product — ТОЛЬКО через createProduct(),
+// как и Telegram/Web Admin остальные мутации. Картинка не задаётся здесь:
+// путь — создать (draft, placeholder) -> AttachMedia -> опубликовать.
 const schema = z.object({
   title: z.string().min(2),
   slug: z.string().min(2),
   description: z.string().default(""),
   price: z.number().int().positive(),
-  oldPrice: z.number().int().positive().optional().nullable(),
-  imageUrl: z.string().min(1),
-  stock: z.number().int().min(0),
+  stock: z.number().int().min(0).default(0),
   categorySlug: z.string().min(1),
   categoryName: z.string().min(1),
-  isActive: z.boolean().default(true),
+  publish: z.boolean().default(false),
 });
 
-async function assertAdmin() {
-  const session = await getServerSession(authOptions);
-  const role = (session?.user as { role?: string } | undefined)?.role;
-  if (role !== "ADMIN") {
-    throw new Response("Forbidden", { status: 403 });
-  }
-}
-
 export async function POST(req: Request) {
-  try {
-    await assertAdmin();
-  } catch (res) {
-    return res as Response;
-  }
+  const actor = await getWebAdminActor();
+  if (!actor) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   const body = await req.json();
   const parsed = schema.safeParse(body);
@@ -45,19 +37,22 @@ export async function POST(req: Request) {
     create: { slug: data.categorySlug, name: data.categoryName },
   });
 
-  const product = await prisma.product.create({
-    data: {
+  try {
+    let product = await createProduct(actor, {
       title: data.title,
       slug: data.slug,
       description: data.description,
       price: data.price,
-      oldPrice: data.oldPrice ?? null,
-      imageUrl: data.imageUrl,
       stock: data.stock,
-      isActive: data.isActive,
       categoryId: category.id,
-    },
-  });
+    });
 
-  return NextResponse.json(product);
+    if (data.publish) {
+      product = await publishProduct(actor, { productId: product.id, expectedVersion: product.version });
+    }
+
+    return NextResponse.json(product);
+  } catch (err) {
+    return adminErrorResponse(err);
+  }
 }

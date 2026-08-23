@@ -10,15 +10,19 @@ datasource db {
 // SQLite не поддерживает enum'ы на уровне БД — роли и статусы заказов
 // хранятся как строки; допустимые значения см. в src/lib/constants.ts.
 model User {
-  id           String   @id @default(cuid())
-  name         String?
-  email        String   @unique
-  passwordHash String
-  phone        String?
-  role         String   @default("CUSTOMER")
-  createdAt    DateTime @default(now())
-  orders       Order[]
-  addresses    Address[]
+  id             String   @id @default(cuid())
+  name           String?
+  email          String   @unique
+  passwordHash   String
+  phone          String?
+  role           String   @default("CUSTOMER")
+  // Telegram operator binding — immutable numeric Telegram user ID, НЕ username.
+  // Привязывается вручную владельцем (нет self-service подключения).
+  telegramUserId String?  @unique
+  createdAt      DateTime @default(now())
+  orders         Order[]
+  addresses      Address[]
+  auditLogs      AuditLog[]
 }
 
 model Address {
@@ -55,17 +59,47 @@ model Product {
   // а тип шага: "cleanse" (очищение) | "active" (активный уход) | "care" (базовый уход).
   routineStep Int?
   routineRole String?
-  price       Int // цена в копейках
+  price       Int // цена в копейках — authoritative, единственный источник для effectivePrice()
   oldPrice    Int?
   imageUrl    String
   stock       Int         @default(0)
-  isActive    Boolean     @default(true)
+  // CANONICAL LIFECYCLE: `status` — единственный source of truth
+  // ("draft" | "published" | "archived"). `isActive` — legacy compatibility
+  // field ТОЛЬКО для существующих storefront-запросов (каталог/PDP её не
+  // меняли и не обязаны знать про status). isActive НИКОГДА не устанавливается
+  // независимо — она всегда derived из status одной чистой функцией
+  // deriveIsActive() (src/lib/admin/product-lifecycle.ts), вызываемой в
+  // единой точке записи. Инвариант isActive === deriveIsActive(status)
+  // проверяется тестом на каждый write-путь (seed включительно).
+  isActive    Boolean     @default(false)
+  status      String      @default("draft") // "draft" | "published" | "archived"
+  featured    Boolean     @default(false)
+  displayOrder Int?
   categoryId  String
   category    Category    @relation(fields: [categoryId], references: [id])
   createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt // человекочитаемое "когда менялось" — для audit/UI
+  version     Int         @default(1) // OCC-токен: команда несёт expectedVersion,
+                                       // write проходит только при совпадении, затем version += 1
   orderItems  OrderItem[]
   skinTypes   ProductSkinType[]
   concerns    ProductConcern[]
+  discount    Discount?
+  media       MediaAsset[]
+}
+
+// Скидка 1:1 с товаром. После endsAt перестаёт участвовать в effectivePrice
+// автоматически — без ручного выключения (см. src/lib/pricing/effective-price.ts).
+model Discount {
+  id        String    @id @default(cuid())
+  productId String    @unique
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  type      String // "percent" | "fixed"
+  value     Int // percent: 1-100; fixed: копейки
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 // Справочники Routine Finder — many-to-many, товар может подходить нескольким
@@ -100,6 +134,95 @@ model ProductConcern {
   concern   Concern @relation(fields: [concernId], references: [id], onDelete: Cascade)
 
   @@id([productId, concernId])
+}
+
+// Загруженный и провалидированный по media contract файл. purpose определяет,
+// какой contract (см. src/lib/media/contracts.ts) применялся при валидации.
+model MediaAsset {
+  id              String   @id @default(cuid())
+  purpose         String // "PRODUCT_PRIMARY" | "PRODUCT_GALLERY" | "HERO_DESKTOP" | "HERO_MOBILE" | "CATEGORY_TILE" | "PROMO_BANNER"
+  url             String // публичный путь — формируется ТОЛЬКО после успешной валидации
+  storageKey      String   @unique // серверное имя файла на диске (никогда не имя от пользователя)
+  width           Int
+  height          Int
+  mimeType        String
+  sizeBytes       Int
+  validationState String // "valid" | "rejected"
+  order           Int      @default(0)
+  isPrimary       Boolean  @default(false)
+  productId       String?
+  product         Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+  bannerDesktopOf Banner[] @relation("BannerDesktopMedia")
+  bannerMobileOf  Banner[] @relation("BannerMobileMedia")
+  createdBy       String
+  createdAt       DateTime @default(now())
+}
+
+model Banner {
+  id             String    @id @default(cuid())
+  name           String
+  placement      String // напр. "HOME_HERO"
+  desktopMediaId String
+  desktopMedia   MediaAsset @relation("BannerDesktopMedia", fields: [desktopMediaId], references: [id])
+  mobileMediaId  String?
+  mobileMedia    MediaAsset? @relation("BannerMobileMedia", fields: [mobileMediaId], references: [id])
+  headline       String?
+  subheadline    String?
+  ctaLabel       String?
+  ctaUrl         String?
+  status         String    @default("draft") // "draft" | "scheduled" | "published" | "archived"
+  startsAt       DateTime?
+  endsAt         DateTime?
+  priority       Int       @default(0)
+  createdBy      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  version        Int       @default(1) // OCC-токен — тот же паттерн, что у Product
+}
+
+// Единый audit trail для Web Admin И Telegram — одна и та же запись независимо
+// от источника команды.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorType  String // "ADMIN_USER"
+  actorId    String
+  actor      User?    @relation(fields: [actorId], references: [id])
+  source     String // "WEB_ADMIN" | "TELEGRAM"
+  action     String // напр. "SET_PRICE", "PUBLISH_PRODUCT"
+  entityType String // напр. "Product", "Banner"
+  entityId   String
+  before     String? // JSON.stringify — SQLite без нативного Json
+  after      String? // JSON.stringify
+  createdAt  DateTime @default(now())
+}
+
+// Telegram confirmation workflow: команда сначала предлагается (preview) и
+// сохраняется здесь, исполняется ТОЛЬКО после явного подтверждения. Модель
+// должна самостоятельно доказывать все 5 гарантий, а не полагаться на
+// единственный unique-ключ:
+//  1. чужой пользователь не подтвердит — actorTelegramUserId сверяется при confirm;
+//  2. payload нельзя подменить после preview — payloadHash пересчитывается и
+//     сверяется с сохранённым при confirm (defense-in-depth поверх payload);
+//  3. просрочка — expiresAt проверяется, статус переводится в "expired";
+//  4. повторное нажатие ничего не выполнит повторно — status переходит
+//     "pending" → "consumed" атомарно (WHERE status='pending'), consumedAt
+//     фиксируется, idempotencyKey остаётся уникальным доп. барьером;
+//  5. устаревшая версия объекта не перетрёт новую — expectedEntityVersion
+//     сверяется с текущим Product.version перед выполнением команды.
+model PendingConfirmation {
+  id                     String    @id @default(cuid())
+  actorTelegramUserId    String
+  commandType            String // напр. "SET_DISCOUNT", "PUBLISH_PRODUCT"
+  entityType             String // напр. "Product", "Banner"
+  entityId               String
+  expectedEntityVersion  Int // OCC-снимок на момент preview
+  payload                String // JSON.stringify типизированной команды
+  payloadHash            String // sha256(payload) — целостность поверх самого payload
+  idempotencyKey         String    @unique
+  status                 String    @default("pending") // "pending" | "consumed" | "expired" | "cancelled"
+  expiresAt              DateTime
+  consumedAt             DateTime?
+  createdAt              DateTime  @default(now())
 }
 
 model Order {

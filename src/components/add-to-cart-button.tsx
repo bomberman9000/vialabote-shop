@@ -29,15 +29,28 @@ export function AddToCartButton({ product }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-3">
-      <input
-        type="number"
-        min={1}
-        max={product.stock}
-        value={quantity}
-        onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
-        className="input w-20"
-      />
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="flex items-center rounded-full border border-brand-200">
+        <button
+          type="button"
+          aria-label="Уменьшить количество"
+          className="flex h-10 w-10 items-center justify-center text-lg text-brand-700 hover:text-brand-900 disabled:opacity-30"
+          disabled={quantity <= 1}
+          onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+        >
+          −
+        </button>
+        <span className="w-8 text-center text-sm font-medium text-brand-800">{quantity}</span>
+        <button
+          type="button"
+          aria-label="Увеличить количество"
+          className="flex h-10 w-10 items-center justify-center text-lg text-brand-700 hover:text-brand-900 disabled:opacity-30"
+          disabled={quantity >= product.stock}
+          onClick={() => setQuantity((q) => Math.min(product.stock, q + 1))}
+        >
+          +
+        </button>
+      </div>
       <button
         className="btn-primary"
         onClick={() => {
@@ -54,7 +67,7 @@ export function AddToCartButton({ product }: Props) {
           router.push("/cart");
         }}
       >
-        В корзину
+        Добавить в корзину
       </button>
     </div>
   );

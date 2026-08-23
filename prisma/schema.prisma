@@ -44,7 +44,17 @@ model Product {
   id          String      @id @default(cuid())
   slug        String      @unique
   title       String
+  subtitle    String? // короткий эффект/обещание, напр. "Сияние и увлажнение за 14 дней"
   description String
+  // Контентные поля для PDP — каждый пункт с новой строки, формат "Название — описание".
+  activeIngredients String?
+  howToUse          String?
+  volume            String? // напр. "50 мл"
+  badge             String? // напр. "Хит продаж", "Новинка"
+  // Routine Finder: место товара в уходе. routineRole — не медицинское значение,
+  // а тип шага: "cleanse" (очищение) | "active" (активный уход) | "care" (базовый уход).
+  routineStep Int?
+  routineRole String?
   price       Int // цена в копейках
   oldPrice    Int?
   imageUrl    String
@@ -54,6 +64,42 @@ model Product {
   category    Category    @relation(fields: [categoryId], references: [id])
   createdAt   DateTime    @default(now())
   orderItems  OrderItem[]
+  skinTypes   ProductSkinType[]
+  concerns    ProductConcern[]
+}
+
+// Справочники Routine Finder — many-to-many, товар может подходить нескольким
+// типам кожи/потребностям одновременно (не строка с "|").
+model SkinType {
+  id       String            @id @default(cuid())
+  slug     String            @unique
+  name     String
+  products ProductSkinType[]
+}
+
+model Concern {
+  id       String           @id @default(cuid())
+  slug     String           @unique
+  name     String
+  products ProductConcern[]
+}
+
+model ProductSkinType {
+  productId  String
+  skinTypeId String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  skinType   SkinType @relation(fields: [skinTypeId], references: [id], onDelete: Cascade)
+
+  @@id([productId, skinTypeId])
+}
+
+model ProductConcern {
+  productId String
+  concernId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  concern   Concern @relation(fields: [concernId], references: [id], onDelete: Cascade)
+
+  @@id([productId, concernId])
 }
 
 model Order {

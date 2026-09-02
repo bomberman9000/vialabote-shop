@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
+import { FlaskConical, Sprout, ShieldCheck, Factory, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { ProductCard } from "@/components/product-card";
+import { Hero } from "@/components/hero";
 import { CONCERNS } from "@/lib/concerns";
-import { RoutineFinderTrigger } from "@/components/routine-finder/routine-finder-trigger";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 
 export const dynamic = "force-dynamic";
@@ -15,21 +16,34 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
 };
 
-// Бейджи скопированы дословно с действующего сайта vialabote.ru — это
-// собственные формулировки бренда, а не придуманные здесь маркетинговые клеймы.
+// Формулировки бренда (vialabote.ru) + описания по утверждённому макету.
+// Иконки — Lucide (единственная утверждённая icon-система storefront), без emoji.
 const TRUST_BADGES = [
-  { icon: "🧪", label: "Эффективные формулы" },
-  { icon: "🌿", label: "Натуральные компоненты" },
-  { icon: "🛡️", label: "Безопасно для кожи" },
-  { icon: "✅", label: "Дерматологически протестировано" },
-  { icon: "🏭", label: "Собственное производство" },
-];
-
-const HERO_BOTTLES = [
-  { image: "/images/products/antiaa2.webp", alt: "Multi3 Anti-Acne Serum" },
-  { image: "/images/products/gidrofil.webp", alt: "Гидрофильное гель-масло" },
-  { image: "/images/products/retinal23.webp", alt: "INCI Retinal Serum" },
-  { image: "/images/products/8in1.webp", alt: "Сыворотка 8 in 1 White Tea" },
+  {
+    icon: FlaskConical,
+    label: "Формулы\nс активными компонентами",
+    description: "Рабочие концентрации и продуманные сочетания",
+  },
+  {
+    icon: Sprout,
+    label: "Продуманные\nсоставы",
+    description: "Баланс природы и науки в каждой формуле",
+  },
+  {
+    icon: ShieldCheck,
+    label: "Контроль\nкачества",
+    description: "Многоступенчатая проверка на всех этапах производства",
+  },
+  {
+    icon: Factory,
+    label: "Собственное\nпроизводство",
+    description: "Современные лаборатории и высокие стандарты",
+  },
+  {
+    icon: Sparkles,
+    label: "Уход по\nпотребностям кожи",
+    description: "Подберите программу ухода с помощью Routine Finder",
+  },
 ];
 
 export default async function HomePage() {
@@ -41,58 +55,22 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-14 md:gap-20">
-      {/* HERO */}
-      <section className="card-dark grid gap-8 overflow-hidden p-8 md:grid-cols-2 md:p-14">
-        <div className="flex flex-col items-start justify-center gap-4">
-          <p className="text-xs uppercase tracking-[0.25em] text-gold-300">
-            Наука. Природа. Гармония.
-          </p>
-          <h1 className="max-w-md font-display text-4xl leading-tight md:text-5xl">
-            Лаборатория персональной косметики для здоровой кожи
-          </h1>
-          <p className="max-w-sm text-brand-200">
-            Эффективные формулы с доказанными активами и натуральными компонентами. Создано с
-            вниманием к вашей коже и её потребностям.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-3">
-            <Link href="/catalog" className="btn-gold">
-              Смотреть каталог
-            </Link>
-            <RoutineFinderTrigger className="btn-outline border-brand-500 text-brand-50 hover:bg-brand-800">
-              Подобрать уход
-            </RoutineFinderTrigger>
-          </div>
-        </div>
-
-        <div className="flex items-end justify-center gap-3 self-end sm:gap-5">
-          {/* Единая "витрина": реальные фото товаров, общая подложка секции,
-              без отдельных рамок-коробок вокруг каждого флакона */}
-          {HERO_BOTTLES.map((bottle, i) => (
-            <div
-              key={bottle.image}
-              className={`relative aspect-[3/4] w-1/4 max-w-[150px] ${i % 2 === 0 ? "" : "-translate-y-4 sm:-translate-y-6"}`}
-            >
-              <Image
-                src={bottle.image}
-                alt={bottle.alt}
-                fill
-                className="object-contain drop-shadow-[0_16px_20px_rgba(0,0,0,0.4)]"
-                sizes="(min-width: 768px) 180px, 120px"
-                priority={i === 0}
-              />
-            </div>
-          ))}
-        </div>
-      </section>
+      <Hero />
 
       {/* WHY VIALABOTE — реальные формулировки бренда */}
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
-        {TRUST_BADGES.map((badge) => (
-          <div key={badge.label} className="card flex flex-col items-center gap-2 p-4 text-center">
-            <span className="text-2xl">{badge.icon}</span>
-            <span className="text-xs font-medium uppercase tracking-wide text-brand-600">
+      <section className="grid grid-cols-2 gap-y-8 sm:grid-cols-3 md:grid-cols-5 md:gap-y-0">
+        {TRUST_BADGES.map((badge, i) => (
+          <div
+            key={badge.label}
+            className={`flex flex-col gap-3 px-4 md:px-6 ${
+              i > 0 ? "md:border-l md:border-brand-100" : ""
+            }`}
+          >
+            <badge.icon size={32} strokeWidth={1.4} className="text-gold-500" aria-hidden="true" />
+            <span className="whitespace-pre-line text-sm font-bold leading-snug text-brand-900">
               {badge.label}
             </span>
+            <span className="text-[13px] leading-relaxed text-brand-500">{badge.description}</span>
           </div>
         ))}
       </section>
@@ -179,8 +157,8 @@ export default async function HomePage() {
         <div className="flex flex-col justify-center gap-4 border-t border-brand-700 pt-6 md:border-l md:border-t-0 md:pl-10 md:pt-0">
           {TRUST_BADGES.map((badge) => (
             <div key={badge.label} className="flex items-center gap-3 text-brand-100">
-              <span className="text-xl">{badge.icon}</span>
-              <span className="text-sm">{badge.label}</span>
+              <badge.icon size={20} strokeWidth={1.6} className="shrink-0 text-gold-300" aria-hidden="true" />
+              <span className="text-sm">{badge.label.replace("\n", " ")}</span>
             </div>
           ))}
         </div>

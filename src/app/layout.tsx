@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
 import "./globals.css";
 import { CartProvider } from "@/lib/cart-context";
 import { Header } from "@/components/header";
@@ -23,17 +22,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <AuthProvider>
           <CartProvider>
-            {/* useSearchParams внутри провайдера требует Suspense-границы —
-                иначе Next.js не сможет статически рендерить часть страниц. */}
-            <Suspense fallback={null}>
-              <RoutineFinderProvider products={routineProducts}>
-                <TopBar />
-                <Header />
-                <main className="mx-auto min-h-[70vh] max-w-7xl px-4 py-8">{children}</main>
-                <Footer />
-                <RoutineFinderWidget />
-              </RoutineFinderProvider>
-            </Suspense>
+            {/* Никакой <Suspense> вокруг {children}: граница здесь заставляла
+                Next отдавать shell со статусом 200 до рендера страницы, и
+                notFound() внутри неё уже не мог изменить статус — 404-страницы
+                отдавались как soft-404 (HTTP 200). RoutineFinderProvider больше
+                не вызывает useSearchParams, поэтому граница не нужна. */}
+            <RoutineFinderProvider products={routineProducts}>
+              <TopBar />
+              <Header />
+              <main className="mx-auto min-h-[70vh] max-w-7xl px-4 py-8">{children}</main>
+              <Footer />
+              <RoutineFinderWidget />
+            </RoutineFinderProvider>
           </CartProvider>
         </AuthProvider>
       </body>

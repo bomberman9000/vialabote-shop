@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   matchRoutine,
   type RoutineProduct,
@@ -45,7 +45,16 @@ export function RoutineFinderProvider({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+
+  // Query-строка читается из window.location, а НЕ через useSearchParams():
+  // этот хук обязан жить под <Suspense>, а единственная доступная граница была
+  // в корневом layout — она оборачивала {children}, из-за чего Next успевал
+  // отдать shell со статусом 200 раньше, чем страница вызывала notFound(),
+  // и любой несуществующий товар отдавал soft-404. Оба обращения ниже —
+  // клиентские (эффект после монтирования и обработчик действия), на SSR не
+  // выполняются, поэтому window здесь всегда определён.
+  const readQuery = () =>
+    new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
 
   const [isOpen, setIsOpen] = useState(false);
   const [step, setStep] = useState<FinderStep>(1);
@@ -58,9 +67,10 @@ export function RoutineFinderProvider({
   // страница не падает.
   useEffect(() => {
     if (restoredFromUrl) return;
-    const concern = searchParams.get(QUERY_KEYS.concern);
-    const skin = searchParams.get(QUERY_KEYS.skin);
-    const scope = searchParams.get(QUERY_KEYS.scope);
+    const current = readQuery();
+    const concern = current.get(QUERY_KEYS.concern);
+    const skin = current.get(QUERY_KEYS.skin);
+    const scope = current.get(QUERY_KEYS.scope);
 
     if (concern && skin && (scope === "minimal" || scope === "full")) {
       const restoredAnswers: FinderAnswers = { concern, skinType: skin, scope };
@@ -78,7 +88,7 @@ export function RoutineFinderProvider({
   }, [restoredFromUrl]);
 
   function syncUrl(next: FinderAnswers | null) {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = readQuery();
     if (next?.concern && next?.skinType && next?.scope) {
       params.set(QUERY_KEYS.concern, next.concern);
       params.set(QUERY_KEYS.skin, next.skinType);

@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { ROUTINE_TAGS } from "../src/lib/routine-data";
 import { CONCERNS, SKIN_TYPES } from "../src/lib/routine-engine";
+import { buildLifecycleFields } from "../src/lib/admin/product-lifecycle";
 
 const prisma = new PrismaClient();
 
@@ -123,7 +124,12 @@ async function main() {
         howToUse: product.howToUse,
         volume: product.volume,
       },
-      create: product,
+      // Сид создаёт товары СРАЗУ опубликованными: schema-дефолты —
+      // status "draft"/isActive false, поэтому без этого свежий seed даёт
+      // витрину без единого видимого товара. Пара status+isActive строится
+      // только через buildLifecycleFields — единая точка инварианта
+      // isActive === deriveIsActive(status), как и во всех write-путях.
+      create: { ...product, ...buildLifecycleFields("published") },
     });
   }
 

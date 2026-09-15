@@ -3,55 +3,56 @@ import Image from "next/image";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { RoutineFinderTrigger } from "@/components/routine-finder/routine-finder-trigger";
 
-// Реальные фотографии товаров (controlled crop, упаковка/этикетки/крышки не
-// изменены — см. scripts в истории подготовки ассетов). Автоматическое удаление
-// фона на этих снимках повреждало прозрачные колпачки, поэтому не применялось:
-// у карточек родной студийный фон с эллиптической растушёвкой краёв.
+// Production master assets (ML matting/u2net, alpha-канал, прозрачные
+// колпачки/помпы сохранены как есть — см. историю подготовки ассетов).
+// Упаковка, этикетки, пропорции не изменены; фон не оставлен — товар на
+// прозрачном поле.
 //
 // heightPct — высота КАРТОЧКИ в % от контейнера ряда; подобрана так, чтобы сам
 // флакон получил высоту, пропорциональную реальному размеру упаковки
-// (серумы 50 мл ≈ 11 см, гель-масло 150 мл ≈ 16.5 см).
-// baselineShift — сдвиг вниз на долю собственной высоты: в кадре под донышком
-// остаётся запас, и без сдвига флаконы «висели» бы над общей линией.
+// (серумы 50 мл ≈ 11 см, гель-масло 150 мл ≈ 16.5 см — физически крупнее).
+// ratio — исходное соотношение сторон PNG (не деформируется).
+// baselineShift — сдвиг вниз на долю собственной высоты: под донышком в кадре
+// остаётся прозрачный запас, и без сдвига флаконы «висели» бы над линией.
 const HERO_BOTTLES = [
   {
-    image: "/images/products/cutouts/rastrovetrol2-card.png",
+    image: "/images/products/masters/rastrovetrol-master.png",
     alt: "Сыворотка Ресвератрол + Витамин C",
-    ratio: "594 / 1552",
-    heightPct: "66.6%",
-    baselineShift: "4.6%",
+    ratio: "425 / 1472",
+    heightPct: "66.7%",
+    baselineShift: "2.0%",
     z: 2,
   },
   {
-    image: "/images/products/cutouts/retinal23-card.png",
+    image: "/images/products/masters/retinal-master.png",
     alt: "INCI Retinal Serum",
-    ratio: "572 / 1509",
+    ratio: "417 / 1467",
     heightPct: "66.7%",
-    baselineShift: "4.8%",
+    baselineShift: "2.0%",
     z: 3,
   },
   {
-    image: "/images/products/cutouts/8in1-card.png",
+    image: "/images/products/masters/8in1-master.png",
     alt: "Сыворотка 8 in 1 White Tea",
-    ratio: "550 / 1440",
-    heightPct: "66.9%",
-    baselineShift: "5.0%",
+    ratio: "420 / 1472",
+    heightPct: "66.7%",
+    baselineShift: "2.0%",
     z: 4,
   },
   {
-    image: "/images/products/cutouts/gidrofil-card.png",
+    image: "/images/products/masters/gidrofil-master.png",
     alt: "Гидрофильное гель-масло",
-    ratio: "550 / 1288",
+    ratio: "495 / 1473",
     heightPct: "100%",
-    baselineShift: "4.7%",
+    baselineShift: "2.0%",
     z: 3,
   },
   {
-    image: "/images/products/cutouts/antiaa2-card.png",
+    image: "/images/products/masters/antiaa-master.png",
     alt: "Multi3 Anti-Acne Serum",
-    ratio: "590 / 1569",
-    heightPct: "63.6%",
-    baselineShift: "4.6%",
+    ratio: "416 / 1221",
+    heightPct: "67.4%",
+    baselineShift: "2.5%",
     z: 2,
   },
 ];

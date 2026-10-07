@@ -190,6 +190,13 @@ async function transitionProduct(actor: AdminActor, rawInput: unknown, targetSta
     );
   }
 
+  // Цена > 0 — тот же инвариант, что у createProduct/setPrice. Черновик может
+  // временно жить без цены (напр. SKU, перенесённый из каталога бренда, у
+  // которого цена ещё не утверждена), но на витрину без цены он не попадёт.
+  if (targetStatus === "published" && before.price <= 0) {
+    throw new AdminCommandError("VALIDATION", "Нельзя опубликовать товар без цены — сначала задайте цену");
+  }
+
   const lifecycle = buildLifecycleFields(targetStatus);
 
   return prisma.$transaction(async (tx) => {

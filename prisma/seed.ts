@@ -19,6 +19,12 @@ async function main() {
     create: { slug: "dlya-muzhchin", name: "Для мужчин" },
   });
 
+  const hairCategory = await prisma.category.upsert({
+    where: { slug: "uhod-za-volosami" },
+    update: {},
+    create: { slug: "uhod-za-volosami", name: "Уход за волосами" },
+  });
+
   const products = [
     {
       slug: "serum-8-in-1-white-tea",
@@ -112,6 +118,70 @@ async function main() {
       categoryId: beardCategory.id,
     },
   ];
+
+  // SKU линейки бренда, перенесённые с vialabote.ru (2026-10-07). Данные —
+  // только то, что есть на сайте бренда: название, линия, объём, описание,
+  // packshot (assets/product-media). Цена на сайте бренда не указана
+  // (продажа через маркетплейсы), поэтому товары создаются ЧЕРНОВИКАМИ с
+  // price=0 и stock=0: на витрину они не попадают, а publish без цены
+  // отклоняется командой (см. transitionProduct). Состав/применение не
+  // заполнены — не выдумываем. create-only: повторный сид не перетирает цену,
+  // остаток и статус, которые владелец задаст в админке/Telegram.
+  const brandDrafts = [
+    {
+      slug: "hydrophilic-balancing-oil",
+      title: "Масло гидрофильное балансирующее для умывания лица",
+      subtitle: "Очищение",
+      description: "Гидрофильное балансирующее масло с маслом моринги и экстрактом центеллы азиатской.",
+      volume: "150 мл",
+      imageUrl: "/images/products/packshot/hydrophilic-balancing-oil.webp",
+      categoryId: category.id,
+    },
+    {
+      slug: "beard-oil-unscented",
+      title: "Масло для бороды без аромата",
+      subtitle: "Мужской уход · СТЕБЛЕВ",
+      description: "Масло для бороды без аромата, 50 мл, линейка СТЕБЛЕВ.",
+      volume: "50 мл",
+      imageUrl: "/images/products/packshot/beard-oil-unscented.webp",
+      categoryId: beardCategory.id,
+    },
+    {
+      slug: "beard-oil-bigman",
+      title: "Масло для бороды с ароматом Бигмен",
+      subtitle: "Мужской уход · СТЕБЛЕВ",
+      description: "Масло для бороды с ароматом Бигмен, 50 мл, линейка СТЕБЛЕВ.",
+      volume: "50 мл",
+      imageUrl: "/images/products/packshot/beard-oil-bigman.webp",
+      categoryId: beardCategory.id,
+    },
+    {
+      slug: "raspberry-ketone-hair-oil",
+      title: "Масло для роста волос с кетоном малины",
+      subtitle: "Уход за волосами · СТЕБЛЕВ Космецевтика",
+      description: "Масло для волос с кетоном малины, экстрактом шёлка и растительными экстрактами.",
+      volume: "50 мл",
+      imageUrl: "/images/products/packshot/raspberry-ketone-hair-oil.webp",
+      categoryId: hairCategory.id,
+    },
+    {
+      slug: "rosemary-hair-oil",
+      title: "Масло для роста волос с розмарином",
+      subtitle: "Уход за волосами · СТЕБЛЕВ Космецевтика",
+      description: "Масло для волос с розмарином и биокомплексом, 50 мл.",
+      volume: "50 мл",
+      imageUrl: "/images/products/packshot/rosemary-hair-oil.webp",
+      categoryId: hairCategory.id,
+    },
+  ];
+
+  for (const draft of brandDrafts) {
+    await prisma.product.upsert({
+      where: { slug: draft.slug },
+      update: {},
+      create: { ...draft, price: 0, stock: 0, ...buildLifecycleFields("draft") },
+    });
+  }
 
   for (const product of products) {
     await prisma.product.upsert({

@@ -127,11 +127,11 @@ NOTES=—
 ```
 SKU=hydrophilic-balancing-oil
 NAME=Гидрофильное масло балансирующее
-SHOP_PRODUCT=— (нет в каталоге магазина)
+SHOP_PRODUCT=hydrophilic-balancing-oil (DRAFT: price=0, stock=0 — цена на сайте бренда не указана; publish без цены запрещён)
 SOURCE_URL=https://vialabote.ru/images/products/hydrophilic-balancing-oil.png
 OWNER_ORIGINAL=public/images/products/source/гидрофильное баланс.png (md5 identical)
 ORIGINAL=assets/product-media/original/hydrophilic-balancing-oil.png (0.40 MB)
-ENHANCED=assets/product-media/enhanced/hydrophilic-balancing-oil.webp (46 KB)
+ENHANCED=assets/product-media/enhanced/hydrophilic-balancing-oil.webp (46 KB)  → public/images/products/packshot/hydrophilic-balancing-oil.webp
 CUTOUT=— (не создан, см. cutout/README.md)
 EDITORIAL=—
 RESOLUTION=1200x1600
@@ -165,11 +165,11 @@ NOTES=В магазине один SKU «Steb.Lev Beard Oil», в линейке
 ```
 SKU=beard-oil-unscented
 NAME=Масло для бороды СТЕБЛЕВ без аромата
-SHOP_PRODUCT=— (нет в каталоге магазина)
+SHOP_PRODUCT=beard-oil-unscented (DRAFT: price=0, stock=0 — цена на сайте бренда не указана; publish без цены запрещён)
 SOURCE_URL=https://vialabote.ru/images/products/beard-oil-unscented.png
 OWNER_ORIGINAL=public/images/products/source/масло без аромата.png (md5 identical)
 ORIGINAL=assets/product-media/original/beard-oil-unscented.png (1.94 MB)
-ENHANCED=assets/product-media/enhanced/beard-oil-unscented.webp (81 KB)
+ENHANCED=assets/product-media/enhanced/beard-oil-unscented.webp (81 KB)  → public/images/products/packshot/beard-oil-unscented.webp
 CUTOUT=— (не создан, см. cutout/README.md)
 EDITORIAL=—
 RESOLUTION=1200x1600
@@ -184,11 +184,11 @@ NOTES=—
 ```
 SKU=beard-oil-bigman
 NAME=Масло для бороды СТЕБЛЕВ «Бигмен»
-SHOP_PRODUCT=— (нет в каталоге магазина)
+SHOP_PRODUCT=beard-oil-bigman (DRAFT: price=0, stock=0 — цена на сайте бренда не указана; publish без цены запрещён)
 SOURCE_URL=https://vialabote.ru/images/products/beard-oil-bigman.png
 OWNER_ORIGINAL=public/images/products/source/масло бигмен.png (md5 identical)
 ORIGINAL=assets/product-media/original/beard-oil-bigman.png (1.59 MB)
-ENHANCED=assets/product-media/enhanced/beard-oil-bigman.webp (80 KB)
+ENHANCED=assets/product-media/enhanced/beard-oil-bigman.webp (80 KB)  → public/images/products/packshot/beard-oil-bigman.webp
 CUTOUT=— (не создан, см. cutout/README.md)
 EDITORIAL=—
 RESOLUTION=1200x1600
@@ -203,11 +203,11 @@ NOTES=—
 ```
 SKU=raspberry-ketone-hair-oil
 NAME=Масло для волос кетон малины СТЕБЛЕВ
-SHOP_PRODUCT=— (нет в каталоге магазина)
+SHOP_PRODUCT=raspberry-ketone-hair-oil (DRAFT: price=0, stock=0 — цена на сайте бренда не указана; publish без цены запрещён)
 SOURCE_URL=https://vialabote.ru/images/products/raspberry-ketone-hair-oil.png
 OWNER_ORIGINAL=public/images/products/source/масло малины.png (md5 identical)
 ORIGINAL=assets/product-media/original/raspberry-ketone-hair-oil.png (1.69 MB)
-ENHANCED=assets/product-media/enhanced/raspberry-ketone-hair-oil.webp (82 KB)
+ENHANCED=assets/product-media/enhanced/raspberry-ketone-hair-oil.webp (82 KB)  → public/images/products/packshot/raspberry-ketone-hair-oil.webp
 CUTOUT=— (не создан, см. cutout/README.md)
 EDITORIAL=—
 RESOLUTION=1200x1600
@@ -222,11 +222,11 @@ NOTES=—
 ```
 SKU=rosemary-hair-oil
 NAME=Масло для волос розмарин СТЕБЛЕВ
-SHOP_PRODUCT=— (нет в каталоге магазина)
+SHOP_PRODUCT=rosemary-hair-oil (DRAFT: price=0, stock=0 — цена на сайте бренда не указана; publish без цены запрещён)
 SOURCE_URL=https://vialabote.ru/images/products/rosemary-hair-oil.png
 OWNER_ORIGINAL=public/images/products/source/масло розмарина.png (md5 identical)
 ORIGINAL=assets/product-media/original/rosemary-hair-oil.png (1.76 MB)
-ENHANCED=assets/product-media/enhanced/rosemary-hair-oil.webp (80 KB)
+ENHANCED=assets/product-media/enhanced/rosemary-hair-oil.webp (80 KB)  → public/images/products/packshot/rosemary-hair-oil.webp
 CUTOUT=— (не создан, см. cutout/README.md)
 EDITORIAL=—
 RESOLUTION=1200x1600

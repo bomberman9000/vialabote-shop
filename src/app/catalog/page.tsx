@@ -49,7 +49,12 @@ export default async function CatalogPage({
   searchParams: { category?: string; concern?: string; sort?: string };
 }) {
   const [categories, concerns] = await Promise.all([
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    // Только категории, в которых есть опубликованный товар: категория из
+    // одних черновиков не даёт фильтр-ссылку на пустую выдачу.
+    prisma.category.findMany({
+      where: { products: { some: { isActive: true } } },
+      orderBy: { name: "asc" },
+    }),
     prisma.concern.findMany({ orderBy: { name: "asc" } }),
   ]);
   const concern = concerns.find((c) => c.slug === searchParams.concern);

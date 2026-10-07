@@ -157,6 +157,31 @@ describe("Product lifecycle — publish/archive", () => {
     expect(archived.isActive).toBe(false);
   });
 
+  it("черновик без цены (price=0) нельзя опубликовать — VALIDATION, статус не меняется", async () => {
+    // createProduct требует цену > 0, поэтому price=0 бывает только у
+    // черновиков из сида (SKU без утверждённой цены) — создаём такой напрямую.
+    const draft = await prisma.product.create({
+      data: {
+        title: "No price draft",
+        slug: uniqueSlug("no-price"),
+        description: "",
+        price: 0,
+        imageUrl: "/x.webp",
+        categoryId,
+        status: "draft",
+        isActive: false,
+      },
+    });
+    createdProductIds.push(draft.id);
+
+    await expect(
+      publishProduct({ userId: adminUserId, source: "TELEGRAM" }, { productId: draft.id, expectedVersion: draft.version }),
+    ).rejects.toMatchObject({ code: "VALIDATION" });
+    const after = await prisma.product.findUniqueOrThrow({ where: { id: draft.id } });
+    expect(after.status).toBe("draft");
+    expect(after.isActive).toBe(false);
+  });
+
   it("устаревший expectedVersion отклоняется (VERSION_CONFLICT), значение не перетирается", async () => {
     const product = await createProduct(
       { userId: adminUserId, source: "WEB_ADMIN" },

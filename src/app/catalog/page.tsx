@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ProductCard } from "@/components/product-card";
+import { ProductCard, ProductGrid } from "@/components/product-card";
 import { concernTitle } from "@/lib/concerns";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 import { SortSelect } from "./sort-select";
@@ -127,7 +127,7 @@ export default async function CatalogPage({
       {products.length === 0 ? (
         <p className="text-brand-500">По этому фильтру пока нет товаров.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        <ProductGrid>
           {products.map(({ product: p, displayPrice }) => (
             <ProductCard
               key={p.id}
@@ -144,7 +144,7 @@ export default async function CatalogPage({
               }}
             />
           ))}
-        </div>
+        </ProductGrid>
       )}
     </div>
   );

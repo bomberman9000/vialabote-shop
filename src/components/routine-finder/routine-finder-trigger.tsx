@@ -2,10 +2,12 @@
 
 import { useRoutineFinder } from "./routine-finder-context";
 
-export function RoutineFinderTrigger({ className, children }: { className?: string; children: React.ReactNode }) {
+type TriggerProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "type" | "onClick">;
+
+export function RoutineFinderTrigger({ children, ...rest }: TriggerProps) {
   const { open } = useRoutineFinder();
   return (
-    <button type="button" onClick={open} className={className}>
+    <button type="button" onClick={open} {...rest}>
       {children}
     </button>
   );

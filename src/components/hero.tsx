@@ -1,170 +1,82 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Sparkles } from "lucide-react";
-import { prisma } from "@/lib/prisma";
 import { RoutineFinderTrigger } from "@/components/routine-finder/routine-finder-trigger";
 
-// Production master assets (ML matting/u2net, alpha-канал, прозрачные
-// колпачки/помпы сохранены как есть — см. историю подготовки ассетов).
-// Упаковка, этикетки, пропорции не изменены; фон не оставлен — товар на
-// прозрачном поле.
+// Hero — один готовый рекламный баннер (2001×786): модель, фон, заголовок,
+// описание и нарисованные CTA уже в картинке. Поверх ничего не рисуем, только
+// прозрачные hit-area на месте нарисованных кнопок.
 //
-// heightPct — высота КАРТОЧКИ в % от контейнера ряда; подобрана так, чтобы сам
-// флакон получил высоту, пропорциональную реальному размеру упаковки
-// (серумы 50 мл ≈ 11 см, гель-масло 150 мл ≈ 16.5 см — физически крупнее).
-// ratio — исходное соотношение сторон PNG (не деформируется).
-// baselineShift — сдвиг вниз на долю собственной высоты: под донышком в кадре
-// остаётся прозрачный запас, и без сдвига флаконы «висели» бы над линией.
+// xl+ (≥1280px): баннер целиком по ширине экрана. Верхние 100px исходника (логотип
+// бренда) срезаны — тот же логотип стоит в шапке сайта прямо над hero.
+// Ниже xl вшитый текст становится нечитаемо мелким, поэтому показываем
+// правую часть кадра (лицо, без вшитого текста) 4:3, а заголовок и кнопки —
+// настоящим HTML. На xl+ заголовок/описание остаются только для screen reader
+// (sr-only), а HTML-кнопки скрыты (их роль берут hit-area): визуально текст и
+// кнопки не дублируются ни на одной ширине.
 //
-// Это таблица ГЕОМЕТРИИ, ключом — slug товара. Значения замерены по каждому
-// конкретному снимку и из данных не выводятся, поэтому остаются в коде. А вот
-// видимость флакона данными управляется: ниже ряд фильтруется по актуальному
-// isActive, чтобы скрытый в админке/Telegram товар не продолжал стоять в hero.
-const HERO_BOTTLES = [
-  {
-    slug: "serum-resveratrol-vitamin-c",
-    image: "/images/products/masters/rastrovetrol-master.png",
-    alt: "Сыворотка Ресвератрол + Витамин C",
-    ratio: "425 / 1472",
-    heightPct: "66.7%",
-    baselineShift: "2.0%",
-    z: 2,
-  },
-  {
-    slug: "inci-retinal-serum",
-    image: "/images/products/masters/retinal-master.png",
-    alt: "INCI Retinal Serum",
-    ratio: "417 / 1467",
-    heightPct: "66.7%",
-    baselineShift: "2.0%",
-    z: 3,
-  },
-  {
-    slug: "serum-8-in-1-white-tea",
-    image: "/images/products/masters/8in1-master.png",
-    alt: "Сыворотка 8 in 1 White Tea",
-    ratio: "420 / 1472",
-    heightPct: "66.7%",
-    baselineShift: "2.0%",
-    z: 4,
-  },
-  {
-    slug: "hydrophilic-gel-oil",
-    image: "/images/products/masters/gidrofil-master.png",
-    alt: "Гидрофильное гель-масло",
-    ratio: "495 / 1473",
-    heightPct: "100%",
-    baselineShift: "2.0%",
-    z: 3,
-  },
-  {
-    slug: "multi3-anti-acne-serum",
-    image: "/images/products/masters/antiaa-master.png",
-    alt: "Multi3 Anti-Acne Serum",
-    ratio: "416 / 1221",
-    heightPct: "67.4%",
-    baselineShift: "2.5%",
-    z: 2,
-  },
-];
+// Координаты hit-area — в % от видимой (обрезанной) области баннера,
+// замерены по пикселям исходника: «Смотреть каталог» x 152–441, «Подобрать
+// уход» x 458–729, обе y 628–686; с запасом 2px на сторону.
+const BANNER = { width: 2001, height: 786, cropTop: 100 };
+const VISIBLE_H = BANNER.height - BANNER.cropTop;
+const pct = (v: number, total: number) => `${((v / total) * 100).toFixed(3)}%`;
+const hitArea = (x0: number, x1: number, y0: number, y1: number) => ({
+  left: pct(x0, BANNER.width),
+  width: pct(x1 - x0, BANNER.width),
+  top: pct(y0 - BANNER.cropTop, VISIBLE_H),
+  height: pct(y1 - y0, VISIBLE_H),
+});
+const CATALOG_HIT = hitArea(150, 443, 626, 688);
+const CARE_HIT = hitArea(456, 731, 626, 688);
 
-export async function Hero() {
-  const activeSlugs = new Set(
-    (
-      await prisma.product.findMany({
-        where: { isActive: true, slug: { in: HERO_BOTTLES.map((b) => b.slug) } },
-        select: { slug: true },
-      })
-    ).map((p) => p.slug),
-  );
-  const bottles = HERO_BOTTLES.filter((b) => activeSlugs.has(b.slug));
+const HIT_CLASS =
+  "absolute hidden cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F7F1E6] xl:block";
 
+export function Hero() {
   return (
-    <section className="relative -mt-8 overflow-hidden bg-[#F7F1E6] md:-mx-[calc((100vw-100%)/2)] md:px-[calc((100vw-100%)/2)]">
-      <div className="relative mx-auto flex min-h-0 max-w-7xl flex-col md:min-h-[600px] md:flex-row">
-        {/* МОДЕЛЬ — уходит в правый край страницы, мягко растворяется в фоне слева */}
-        <div className="absolute inset-y-0 right-0 hidden w-[62%] md:block">
-          <Image
-            src="/images/hero-main.webp"
-            alt="Модель Vialabote"
-            fill
-            className="object-cover object-[72%_20%]"
-            sizes="60vw"
-            priority
-          />
-          {/* растворение фотографии в кремовый фон — без жёсткого края карточки */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#F7F1E6] via-[#F7F1E6]/55 via-30% to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-[#F7F1E6]/70 to-transparent" />
-        </div>
-
-        {/* КОПИЯ — левая колонка */}
-        <div className="relative z-20 flex flex-col justify-center gap-3 px-5 pb-2 pt-6 sm:gap-4 sm:px-8 md:w-[46%] md:py-0 md:pl-2 md:pr-0">
-          <h1 className="max-w-[15ch] text-[1.8rem] font-extrabold leading-[1.08] tracking-[-0.01em] text-brand-900 sm:text-[2.6rem] md:text-[3.1rem]">
+    <section className="relative -mx-4 -mt-8 grid items-center gap-6 bg-[#F7F1E6] px-5 pb-6 pt-6 sm:px-8 md:grid-cols-2 md:gap-8 md:py-10 xl:-mx-[calc((100vw-100%)/2)] xl:block xl:p-0">
+      <div className="flex flex-col gap-3 sm:gap-4">
+        {/* Заголовок и описание: видимы ниже xl, на xl+ — только для screen reader */}
+        <div className="flex flex-col gap-3 sm:gap-4 xl:sr-only">
+          <h1 className="max-w-[15ch] text-[1.8rem] font-extrabold leading-[1.08] tracking-[-0.01em] text-brand-900 sm:text-[2.6rem]">
             Персональная формула вашей кожи
           </h1>
           <p className="text-lg font-medium text-gold-500 sm:text-xl">Наука. Природа. Гармония.</p>
           <p className="max-w-[38ch] text-sm leading-relaxed text-brand-600 sm:text-[15px]">
             Эффективные формулы с активными компонентами для красоты и здоровья кожи каждый день.
           </p>
-          <div className="mt-2 flex flex-wrap gap-3">
-            <Link
-              href="/catalog"
-              className="inline-flex items-center gap-2.5 rounded-md bg-brand-900 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.06em] text-white transition-colors hover:bg-brand-800 sm:text-[13px]"
-            >
-              Смотреть каталог
-              <ArrowRight size={16} strokeWidth={2} />
-            </Link>
-            <RoutineFinderTrigger className="inline-flex items-center gap-2.5 rounded-md border border-gold-400 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.06em] text-gold-500 transition-colors hover:bg-gold-50 sm:text-[13px]">
-              Подобрать уход
-              <Sparkles size={15} strokeWidth={1.8} />
-            </RoutineFinderTrigger>
-          </div>
         </div>
+        {/* HTML-кнопки только ниже xl; на xl+ их заменяют hit-area на баннере */}
+        <div className="mt-2 flex flex-wrap gap-3 xl:hidden">
+          <Link
+            href="/catalog"
+            className="inline-flex items-center gap-2.5 rounded-md bg-brand-900 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.06em] text-white transition-colors hover:bg-brand-800 sm:text-[13px]"
+          >
+            Смотреть каталог
+            <ArrowRight size={16} strokeWidth={2} aria-hidden="true" />
+          </Link>
+          <RoutineFinderTrigger className="inline-flex items-center gap-2.5 rounded-md border border-gold-400 px-6 py-3.5 text-xs font-bold uppercase tracking-[0.06em] text-gold-500 transition-colors hover:bg-gold-50 sm:text-[13px]">
+            Подобрать уход
+            <Sparkles size={15} strokeWidth={1.8} aria-hidden="true" />
+          </RoutineFinderTrigger>
+        </div>
+      </div>
 
-        {/* МОДЕЛЬ на мобильном — отдельным блоком под текстом */}
-        <div className="relative mt-3 h-[40vw] min-h-[165px] w-full md:hidden">
-          <Image
-            src="/images/hero-main.webp"
-            alt="Модель Vialabote"
-            fill
-            className="object-cover object-[72%_18%]"
-            sizes="100vw"
-            priority
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-[#F7F1E6] via-transparent to-transparent" />
-        </div>
-
-        {/* ПРОДУКТЫ — крупный foreground перед моделью, стоят на общей поверхности.
-            Ряд целиком исчезает, если ни один из этих товаров не опубликован —
-            иначе осталась бы висеть «полка» с тенью без флаконов. */}
-        {bottles.length > 0 && (
-        <div className="pointer-events-none relative z-10 -mt-12 flex h-[34vw] max-h-[260px] min-h-[140px] w-full items-end justify-center px-4 pb-4 md:absolute md:bottom-[9%] md:left-[41%] md:top-[40%] md:mt-0 md:h-auto md:max-h-none md:w-[38%] md:px-0 md:pb-0">
-          {/* поверхность-«полка»: общая мягкая тень под рядом */}
-          <div className="absolute bottom-[-2%] left-[2%] right-[2%] h-[10%] rounded-[100%] bg-gradient-to-b from-black/25 to-transparent blur-md" />
-          <div className="flex h-full w-full items-end justify-center gap-[0.5%]">
-            {bottles.map((bottle) => (
-              <div
-                key={bottle.slug}
-                className="relative flex-none"
-                style={{
-                  height: bottle.heightPct,
-                  aspectRatio: bottle.ratio,
-                  transform: `translateY(${bottle.baselineShift})`,
-                  zIndex: bottle.z,
-                }}
-              >
-                <Image
-                  src={bottle.image}
-                  alt={bottle.alt}
-                  fill
-                  className="object-contain object-bottom"
-                  sizes="170px"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-        )}
+      {/* Баннер: ниже xl — кадр с лицом 4:3, на xl+ — целиком без логотипа */}
+      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl xl:aspect-[2001/686] xl:rounded-none">
+        <Image
+          src="/images/hero/vialabote-hero.jpg"
+          alt="Via Labote — персональная формула вашей кожи"
+          fill
+          priority
+          sizes="(min-width: 1280px) 100vw, (min-width: 768px) 50vw, 100vw"
+          className="object-cover object-right xl:object-bottom"
+        />
+        <Link href="/catalog" aria-label="Смотреть каталог" className={HIT_CLASS} style={CATALOG_HIT} />
+        <RoutineFinderTrigger aria-label="Подобрать уход" className={HIT_CLASS} style={CARE_HIT}>
+          <span className="sr-only">Подобрать уход</span>
+        </RoutineFinderTrigger>
       </div>
     </section>
   );

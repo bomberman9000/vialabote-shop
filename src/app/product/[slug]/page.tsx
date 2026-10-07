@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import { CreditCard, Truck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/money";
 import { AddToCartButton } from "@/components/add-to-cart-button";
-import { ProductCard } from "@/components/product-card";
+import { ProductCard, ProductGrid } from "@/components/product-card";
+import { toProductCardData } from "@/lib/product-card-data";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 
 export const dynamic = "force-dynamic";
@@ -57,17 +59,19 @@ export default async function ProductPage({ params }: { params: { slug: string }
     <div className="flex flex-col gap-14">
       <div className="grid gap-10 md:grid-cols-2">
         {/* GALLERY — сейчас одно фото на товар, доп. изображений в assets нет */}
-        <div className="relative aspect-square overflow-hidden rounded-2xl bg-brand-50">
+        {/* Та же область фото, что у ProductCard: 3:4, молочный фон, contain —
+            снимок не обрезается и не растягивается */}
+        <div className="relative mx-auto aspect-[3/4] w-full max-w-[520px] overflow-hidden rounded-2xl bg-[#F1EADF]">
           <Image
             src={product.imageUrl}
             alt={product.title}
             fill
-            className="object-contain p-10"
-            sizes="500px"
+            className="object-contain"
+            sizes="(min-width: 768px) 520px, 100vw"
             priority
           />
           {product.badge ? (
-            <span className="absolute left-4 top-4 rounded-full bg-gold-400 px-3 py-1 text-xs font-medium uppercase tracking-wide text-brand-900">
+            <span className="absolute left-4 top-4 rounded-full bg-[#FAF6EE]/95 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-brand-900">
               {product.badge}
             </span>
           ) : null}
@@ -127,8 +131,8 @@ export default async function ProductPage({ params }: { params: { slug: string }
           />
 
           <div className="mt-2 flex flex-col gap-1 border-t border-brand-100 pt-4 text-xs text-brand-500">
-            <span>🚚 Доставка по России курьером и в пункты выдачи</span>
-            <span>💳 Безопасная онлайн-оплата картой через ЮKassa</span>
+            <span className="inline-flex items-center gap-2"><Truck size={15} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Доставка по России курьером и в пункты выдачи</span>
+            <span className="inline-flex items-center gap-2"><CreditCard size={15} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Безопасная онлайн-оплата картой через ЮKassa</span>
           </div>
         </div>
       </div>
@@ -175,27 +179,11 @@ export default async function ProductPage({ params }: { params: { slug: string }
       {related.length > 0 ? (
         <section>
           <h2 className="mb-6 font-display text-2xl text-brand-800">Дополните уход</h2>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {related.map((p) => {
-              const relatedPrice = resolveDisplayPrice(p);
-              return (
-                <ProductCard
-                  key={p.id}
-                  product={{
-                    id: p.id,
-                    slug: p.slug,
-                    title: p.title,
-                    subtitle: p.subtitle,
-                    badge: p.badge,
-                    price: relatedPrice.price,
-                    oldPrice: relatedPrice.compareAtPrice,
-                    imageUrl: p.imageUrl,
-                    stock: p.stock,
-                  }}
-                />
-              );
-            })}
-          </div>
+          <ProductGrid>
+            {related.map((p) => (
+              <ProductCard key={p.id} product={toProductCardData(p)} />
+            ))}
+          </ProductGrid>
         </section>
       ) : null}
     </div>

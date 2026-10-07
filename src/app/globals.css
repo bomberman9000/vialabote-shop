@@ -9,7 +9,11 @@
 }
 
 body {
-  @apply bg-brand-50 text-brand-900;
+  @apply bg-[#FAF6EE] text-brand-900;
+  /* full-bleed hero использует 100vw, который включает ширину классического
+     скроллбара; clip (не hidden) убирает горизонтальный скролл и не ломает
+     sticky-шапку */
+  overflow-x: clip;
 }
 
 h1,

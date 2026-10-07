@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { FlaskConical, Sprout, ShieldCheck, Factory, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { ProductCard } from "@/components/product-card";
+import { ProductCard, ProductGrid } from "@/components/product-card";
+import { ConcernCard } from "@/components/concern-card";
+import { toProductCardData } from "@/lib/product-card-data";
 import { Hero } from "@/components/hero";
 import { concernTitle } from "@/lib/concerns";
-import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 
 export const dynamic = "force-dynamic";
 
@@ -109,26 +109,11 @@ export default async function HomePage() {
             товары, либо выполните `npm run db:seed`.
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-6">
-            {products.map((p) => {
-              const displayPrice = resolveDisplayPrice(p);
-              return (
-                <ProductCard
-                  key={p.id}
-                  product={{
-                    id: p.id,
-                    slug: p.slug,
-                    title: p.title,
-                    subtitle: p.subtitle,
-                    price: displayPrice.price,
-                    oldPrice: displayPrice.compareAtPrice,
-                    imageUrl: p.imageUrl,
-                    stock: p.stock,
-                  }}
-                />
-              );
-            })}
-          </div>
+          <ProductGrid columns={3}>
+            {products.map((p) => (
+              <ProductCard key={p.id} product={toProductCardData(p)} />
+            ))}
+          </ProductGrid>
         )}
       </section>
 
@@ -138,29 +123,9 @@ export default async function HomePage() {
           <h2 className="mb-6 font-display text-2xl text-brand-800">
             Подберите уход по потребности
           </h2>
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-3 lg:grid-cols-5 max-md:[&>*:last-child:nth-child(odd)]:col-span-2 max-md:[&>*:last-child:nth-child(odd)]:aspect-[2/1]">
             {concernTiles.map((concern) => (
-              <Link
-                key={concern.slug}
-                href={`/catalog?concern=${concern.slug}`}
-                className="card group flex flex-col overflow-hidden transition-transform hover:-translate-y-0.5"
-              >
-                <div className="relative aspect-square bg-brand-50">
-                  <Image
-                    src={concern.image}
-                    alt={concern.title}
-                    fill
-                    className="object-contain p-6"
-                    sizes="200px"
-                  />
-                </div>
-                <div className="flex flex-1 flex-col gap-1 p-4">
-                  <span className="text-sm font-medium text-brand-800">{concern.title}</span>
-                  <span className="mt-auto text-xs text-brand-500 group-hover:underline">
-                    Смотреть →
-                  </span>
-                </div>
-              </Link>
+              <ConcernCard key={concern.slug} concern={concern} />
             ))}
           </div>
         </section>
@@ -173,9 +138,8 @@ export default async function HomePage() {
           <h2 className="font-display text-3xl">Наука. Природа. Гармония.</h2>
           <p className="max-w-md text-brand-200">
             Via Labote — лаборатория персональной косметики, где каждая формула создаётся как
-            точный ответ коже. Этот сайт — наш собственный интернет-магазин: здесь действуют
-            отдельные условия, есть личный кабинет с историей заказов и прямая связь с нами —
-            без комиссий и правил маркетплейсов.
+            точный ответ коже. Здесь продукция бренда доступна напрямую — только оригинальные
+            средства, — а уход можно подобрать под задачи именно вашей кожи.
           </p>
         </div>
         <div className="flex flex-col justify-center gap-4 border-t border-brand-700 pt-6 md:border-l md:border-t-0 md:pl-10 md:pt-0">

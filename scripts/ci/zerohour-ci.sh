@@ -75,7 +75,7 @@ else
   FAILS+=("install")
 fi
 
-TESTS_SUMMARY=$(grep -E "Tests +[0-9]+" "$LOGS/tests.log" 2>/dev/null | tail -1 | sed 's/^ *//')
+TESTS_SUMMARY=$(sed 's/\x1b\[[0-9;]*m//g' "$LOGS/tests.log" 2>/dev/null | grep -E "Tests +[0-9]+" | tail -1 | sed 's/^ *//')
 # WORKTREE_CLEAN: tracked files unchanged and no untracked non-ignored files
 DIRTY=$(git status --porcelain --untracked-files=all -- . ':(exclude).ci-logs' ':(exclude).ci-db' | head -20)
 [ -z "$DIRTY" ] && CLEAN=YES || CLEAN="NO: $(echo "$DIRTY" | tr '\n' ';')"

@@ -70,15 +70,20 @@ export function ProductCard({ product }: { product: ProductCardData }) {
         ) : null}
 
         <div className="mt-auto flex flex-col gap-3 pt-3">
-          <p className="flex flex-wrap items-baseline gap-x-2">
-            <span className="text-base font-bold text-brand-900 sm:text-lg">{formatPrice(product.price)}</span>
-            {product.oldPrice && product.oldPrice > product.price ? (
-              <span className="text-sm text-brand-400 line-through">
-                <span className="sr-only">Старая цена: </span>
-                {formatPrice(product.oldPrice)}
-              </span>
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-base font-bold text-brand-900 sm:text-lg">{formatPrice(product.price)}</span>
+              {product.oldPrice && product.oldPrice > product.price ? (
+                <span className="text-sm text-brand-400 line-through">
+                  <span className="sr-only">Старая цена: </span>
+                  {formatPrice(product.oldPrice)}
+                </span>
+              ) : null}
+            </p>
+            {product.volume ? (
+              <span className="shrink-0 whitespace-nowrap text-xs font-semibold text-brand-500">{product.volume}</span>
             ) : null}
-          </p>
+          </div>
           <button
             type="button"
             onClick={handleAdd}

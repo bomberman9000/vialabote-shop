@@ -7,200 +7,236 @@ import { buildLifecycleFields } from "../src/lib/admin/product-lifecycle";
 const prisma = new PrismaClient();
 
 async function main() {
-  const category = await prisma.category.upsert({
-    where: { slug: "uhod-za-litsom" },
-    update: {},
-    create: { slug: "uhod-za-litsom", name: "Уход за лицом" },
-  });
+  // Категории — как в каталоге бренда vialabote.ru/products (2026-10-07):
+  // фильтры Сыворотки · Очищение · Для бороды · Для волос. Старая
+  // «Уход за лицом» не удаляется (на неё могут ссылаться товары из
+  // админки/Telegram) — пустая категория просто не попадает в фильтры.
+  const category = async (slug: string, name: string) =>
+    prisma.category.upsert({ where: { slug }, update: { name }, create: { slug, name } });
+  const serums = await category("syvorotki", "Сыворотки");
+  const cleansing = await category("ochishchenie", "Очищение");
+  const men = await category("dlya-muzhchin", "Для бороды");
+  const hair = await category("uhod-za-volosami", "Для волос");
 
-  const beardCategory = await prisma.category.upsert({
-    where: { slug: "dlya-muzhchin" },
-    update: {},
-    create: { slug: "dlya-muzhchin", name: "Для мужчин" },
-  });
+  // КАТАЛОГ = 11 товаров линейки бренда, сверены с vialabote.ru/products
+  // (название, категория, объём, описание, активные компоненты, способ
+  // применения, packshot — тот же файл, что на сайте бренда). Тексты — с
+  // сайта бренда без добавлений; subtitle — короткая выжимка его же
+  // формулировок. Где на сайте бренда нет состава/применения, поле пустое.
+  //
+  // Цена: на сайте бренда цен нет (продажа через маркетплейсы).
+  // - published: цены — оценка по аналогам WB (коммит 468d7ba), НЕ
+  //   подтверждены владельцем; сид их сохраняет, чтобы витрина не опустела.
+  // - draft: price=0/stock=0, create-only по цене/остатку/статусу —
+  //   опубликовать можно только после того, как владелец задаст цену
+  //   (publish без цены отклоняется, см. transitionProduct).
+  // Контентные поля сид обновляет у всех 11 SKU — источник истины для них
+  // сайт бренда; цену/остаток/статус черновиков сид не трогает.
+  type CatalogEntry = {
+    slug: string;
+    title: string;
+    subtitle: string;
+    description: string;
+    activeIngredients: string | null;
+    howToUse: string | null;
+    volume: string;
+    imageUrl: string;
+    categoryId: string;
+  } & ({ lifecycle: "published"; price: number; stock: number } | { lifecycle: "draft" });
 
-  const hairCategory = await prisma.category.upsert({
-    where: { slug: "uhod-za-volosami" },
-    update: {},
-    create: { slug: "uhod-za-volosami", name: "Уход за волосами" },
-  });
-
-  const products = [
+  const catalog: CatalogEntry[] = [
     {
-      slug: "serum-8-in-1-white-tea",
-      title: "Сыворотка 8 in 1 White Tea",
-      subtitle: "Увлажнение и тонус ежедневно",
-      description: "Сыворотка с гиалуроновой кислотой и экстрактом белого чая. 50 мл.",
+      slug: "serum-8-in-1-white-tea", // vialabote.ru: hyaluron-8in1
+      title: "Увлажняющая сыворотка для лица с гиалуроновой кислотой 8 в 1",
+      subtitle: "Увлажнение при сухости, шелушении и тусклости",
+      description:
+        "Увлажняющая сыворотка содержит высоко- и низкомолекулярную гиалуроновую кислоту, пантенол, экстракты белого чая и ромашки. В каталоге она предназначена для ухода при сухости, шелушении, тусклости и морщинах.",
       activeIngredients:
-        "Гиалуроновая кислота (низко- и высокомолекулярная) — увлажнение на разных уровнях кожи\nЭкстракт белого чая — антиоксидантный компонент состава",
+        "Гиалуроновая кислота высокомолекулярная\nГиалуроновая кислота низкомолекулярная\nЭкстракт белого чая\nЭкстракт ромашки\nПантенол",
       howToUse:
-        "Нанести 2–3 капли на очищенную кожу лица утром и вечером, слегка вбить подушечками пальцев. Перед плотным кремом.",
+        "Лёгкую текстуру можно наносить на лицо, шею и декольте перед кремом.\nПереносимость косметики индивидуальна: перед первым применением проверьте актуальный состав на упаковке и протестируйте средство на небольшом участке кожи.",
       volume: "50 мл",
-      price: 59000,
-      oldPrice: null,
       imageUrl: "/images/products/packshot/hyaluron-8in1.webp",
+      categoryId: serums.id,
+      lifecycle: "published",
+      price: 59000,
       stock: 20,
-      categoryId: category.id,
     },
     {
-      slug: "serum-resveratrol-vitamin-c",
-      title: "Сыворотка Ресвератрол + Витамин C",
-      subtitle: "Антиоксидантная защита и сияние",
-      description: "Антиоксидантная сыворотка для сияния кожи. 50 мл.",
+      slug: "inci-retinal-serum", // vialabote.ru: retinal
+      title: "Сыворотка для лица с РЕТИНАЛЕМ",
+      subtitle: "Вечерний уход при неровном тоне, постакне и морщинах",
+      description:
+        "В составе продукта указаны ретинальдегид, лизат лактобактерий, витамин A и пантенол. Сыворотка предназначена для вечернего косметического ухода при неровном тоне, постакне, тусклости и морщинах.",
       activeIngredients:
-        "Ресвератрол — антиоксидантный компонент растительного происхождения\nВитамин C — компонент состава, применяемый для ухода за тоном кожи",
-      howToUse: "Нанести несколько капель на очищенную кожу утром перед кремом с SPF.",
-      volume: "50 мл",
-      price: 55000,
-      oldPrice: null,
-      imageUrl: "/images/products/packshot/resveratrol-c.webp",
-      stock: 15,
-      categoryId: category.id,
-    },
-    {
-      slug: "inci-retinal-serum",
-      title: "INCI Retinal Serum",
-      subtitle: "Обновление и упругость кожи",
-      description: "Сыворотка с ретиналом, витамином B5 и пробиотиками. 50 мл.",
-      activeIngredients:
-        "Ретиналь (Vitamin A) — компонент, используемый в уходе anti-age\nВитамин B5 — увлажняющий компонент\nПробиотики — поддержка баланса кожи",
+        "Ретинальдегид (ретиналь)\nЛизат лактобактерий\nВитамин A\nВитамин B5 (пантенол)\nПробиотики",
       howToUse:
-        "Использовать вечером на очищенную кожу. Начинать с 2–3 раз в неделю, наращивая частоту. Утром обязательно SPF.",
+        "Нанесите небольшое количество на чистую кожу, избегая области вокруг глаз, и следуйте инструкции на актуальной упаковке.\nВводите средство постепенно, учитывайте индивидуальную переносимость и используйте подходящую дневную защиту от солнца.\nПри беременности, грудном вскармливании или терапии согласуйте использование ретиноидов с врачом.",
       volume: "50 мл",
-      price: 60400,
-      oldPrice: null,
       imageUrl: "/images/products/packshot/retinal.webp",
+      categoryId: serums.id,
+      lifecycle: "published",
+      price: 60400,
       stock: 10,
-      categoryId: category.id,
     },
     {
-      slug: "multi3-anti-acne-serum",
-      title: "Multi3 Anti-Acne Serum",
-      subtitle: "Для проблемной и жирной кожи",
-      description: "Сыворотка против акне с ниацинамидом и цинком. 50 мл.",
+      slug: "multi3-anti-acne-serum", // vialabote.ru: multi3
+      title: "Сыворотка для лица от прыщей анти акне с ниацинамидом",
+      subtitle: "MULTI 3: жирный блеск, черные точки, высыпания",
+      description:
+        "MULTI 3 — сыворотка для косметического ухода за кожей с высыпаниями, черными точками и жирным блеском. В карточке продукта указаны ниацинамид, салициловая кислота, пробиотический комплекс и растительные экстракты.",
       activeIngredients:
-        "Ниацинамид — компонент состава, применяемый для жирной/проблемной кожи\nЦинк PCA — компонент, регулирующий состав средства",
-      howToUse: "Наносить точечно или по всей поверхности лица утром и вечером после очищения.",
-      volume: "50 мл",
-      price: 56000,
-      oldPrice: null,
-      imageUrl: "/images/products/packshot/multi3.webp",
-      stock: 18,
-      categoryId: category.id,
-    },
-    {
-      slug: "hydrophilic-gel-oil",
-      title: "Гидрофильное гель-масло",
-      subtitle: "Для умывания и снятия макияжа",
-      description: "Балансирующее гидрофильное масло с маслом моринги. 150 мл.",
-      activeIngredients: "Масло моринги — базовый компонент формулы гидрофильного масла",
+        "Ниацинамид\nСалициловая кислота\nКомплекс пробиотиков\nКомплексы растительных экстрактов",
       howToUse:
-        "Нанести на сухую кожу, помассировать, смыть тёплой водой или снять салфеткой. Первый шаг двухфазного очищения.",
-      volume: "150 мл",
-      price: 89000,
-      oldPrice: null,
-      imageUrl: "/images/products/packshot/hydrophilic-oil.webp",
-      stock: 25,
-      categoryId: category.id,
+        "Лёгкая текстура рассчитана на нанесение небольшого количества средства.\nВводите продукт постепенно и проверяйте актуальный состав на упаковке.\nКосметическое средство не предназначено для диагностики или медицинской терапии; при болезненных или устойчивых высыпаниях обратитесь к врачу.",
+      volume: "50 мл",
+      imageUrl: "/images/products/packshot/multi3.webp",
+      categoryId: serums.id,
+      lifecycle: "published",
+      price: 56000,
+      stock: 18,
     },
     {
-      slug: "beard-oil-steblev",
-      title: "Steb.Lev Beard Oil",
-      subtitle: "Масло для бороды и кожи лица",
-      description: "100% натуральное масло для бороды: укрепление, питание, рост. 50 мл.",
-      activeIngredients: "100% натуральная масляная основа без искусственных добавок",
-      howToUse: "Несколько капель растереть в ладонях и распределить по бороде и коже под ней.",
+      slug: "serum-resveratrol-vitamin-c", // vialabote.ru: resveratrol-c
+      title: "Сыворотка для лица осветляющая с ресвератролом",
+      subtitle: "Ресвератрол и витамин C при тусклости и неровном тоне",
+      description:
+        "Сыворотка содержит ресвератрол, аскорбилфосфат натрия — стабильную форму витамина C — и комплекс растительных экстрактов. В каталоге продукт относится к уходу при тусклости, неровном тоне, пигментации, постакне и возрастных изменениях.",
+      activeIngredients:
+        "Ресвератрол\nВитамин C (аскорбилфосфат натрия)\nЭкстракт мучели\nКомплекс растительных экстрактов",
+      howToUse:
+        "Наносите небольшое количество на очищенную кожу перед кремом согласно инструкции на актуальной упаковке.\nДнём используйте подходящую защиту от солнца.\nПереносимость активных компонентов индивидуальна.",
       volume: "50 мл",
-      price: 69000,
-      oldPrice: null,
-      imageUrl: "/images/products/packshot/beard-oil.webp",
-      stock: 12,
-      categoryId: beardCategory.id,
+      imageUrl: "/images/products/packshot/resveratrol-c.webp",
+      categoryId: serums.id,
+      lifecycle: "published",
+      price: 55000,
+      stock: 15,
     },
-  ];
-
-  // SKU линейки бренда, перенесённые с vialabote.ru (2026-10-07). Данные —
-  // только то, что есть на сайте бренда: название, линия, объём, описание,
-  // packshot (assets/product-media). Цена на сайте бренда не указана
-  // (продажа через маркетплейсы), поэтому товары создаются ЧЕРНОВИКАМИ с
-  // price=0 и stock=0: на витрину они не попадают, а publish без цены
-  // отклоняется командой (см. transitionProduct). Состав/применение не
-  // заполнены — не выдумываем. create-only: повторный сид не перетирает цену,
-  // остаток и статус, которые владелец задаст в админке/Telegram.
-  const brandDrafts = [
+    {
+      slug: "hydrophilic-gel-oil", // vialabote.ru: hydrophilic-oil
+      title: "Гидрофильное гель-масло для умывания лица",
+      subtitle: "Первый этап очищения: стойкий макияж, SPF, BB- и CC-крем",
+      description:
+        "Гидрофильное гель-масло предназначено для первого этапа очищения: удаления стойкого макияжа, SPF, BB- и CC-крема. В карточке продукта указаны масла миндаля, виноградной косточки, шиповника, семян моркови и киви.",
+      activeIngredients:
+        "Масло миндаля\nМасло виноградной косточки\nМасло шиповника\nМасло семян моркови\nМасло семян киви",
+      howToUse:
+        "Нанесите небольшое количество на сухую кожу, аккуратно распределите, добавьте воду для эмульгирования и тщательно смойте.\nПри необходимости завершите очищение привычным мягким средством.\nУчитывайте индивидуальную переносимость масел и сверяйте актуальный состав с упаковкой.",
+      volume: "150 мл",
+      imageUrl: "/images/products/packshot/hydrophilic-oil.webp",
+      categoryId: cleansing.id,
+      lifecycle: "published",
+      price: 89000,
+      stock: 25,
+    },
+    {
+      slug: "beard-oil-steblev", // vialabote.ru: beard-oil
+      title: "Масло для бороды с ароматом табака и амбры",
+      subtitle: "Несмываемое · аромат табака, ванили и амбры · СТЕБЛЕВ",
+      description:
+        "Несмываемое масло для бороды с ароматом табака, ванили и амбры. В карточке продукта указаны масла оливы, миндаля, жожоба, подсолнечника и арганы, касторовое масло и витамин E.",
+      activeIngredients:
+        "Масло оливы\nМасло миндаля\nМасло жожоба\nМасло подсолнечника\nВитамин E\nКасторовое масло\nМасло арганы",
+      howToUse:
+        "Небольшое количество масла разотрите в ладонях и распределите по чистой сухой бороде и коже под ней.\nКоличество средства зависит от длины бороды; следуйте инструкции на актуальной упаковке и учитывайте индивидуальную переносимость компонентов.",
+      volume: "50 мл",
+      imageUrl: "/images/products/packshot/beard-oil.webp",
+      categoryId: men.id,
+      lifecycle: "published",
+      price: 69000,
+      stock: 12,
+    },
     {
       slug: "hydrophilic-balancing-oil",
       title: "Масло гидрофильное балансирующее для умывания лица",
-      subtitle: "Очищение",
+      subtitle: "Масло моринги и экстракт центеллы азиатской",
       description: "Гидрофильное балансирующее масло с маслом моринги и экстрактом центеллы азиатской.",
+      activeIngredients: "Масло моринги\nЭкстракт центеллы азиатской",
+      howToUse: null,
       volume: "150 мл",
       imageUrl: "/images/products/packshot/hydrophilic-balancing-oil.webp",
-      categoryId: category.id,
+      categoryId: cleansing.id,
+      lifecycle: "draft",
     },
     {
       slug: "beard-oil-unscented",
       title: "Масло для бороды без аромата",
-      subtitle: "Мужской уход · СТЕБЛЕВ",
+      subtitle: "Без аромата · СТЕБЛЕВ",
       description: "Масло для бороды без аромата, 50 мл, линейка СТЕБЛЕВ.",
+      activeIngredients: null,
+      howToUse: null,
       volume: "50 мл",
       imageUrl: "/images/products/packshot/beard-oil-unscented.webp",
-      categoryId: beardCategory.id,
+      categoryId: men.id,
+      lifecycle: "draft",
     },
     {
       slug: "beard-oil-bigman",
       title: "Масло для бороды с ароматом Бигмен",
-      subtitle: "Мужской уход · СТЕБЛЕВ",
+      subtitle: "Аромат Бигмен · СТЕБЛЕВ",
       description: "Масло для бороды с ароматом Бигмен, 50 мл, линейка СТЕБЛЕВ.",
+      activeIngredients: null,
+      howToUse: null,
       volume: "50 мл",
       imageUrl: "/images/products/packshot/beard-oil-bigman.webp",
-      categoryId: beardCategory.id,
+      categoryId: men.id,
+      lifecycle: "draft",
     },
     {
       slug: "raspberry-ketone-hair-oil",
       title: "Масло для роста волос с кетоном малины",
-      subtitle: "Уход за волосами · СТЕБЛЕВ Космецевтика",
+      subtitle: "Кетон малины и экстракт шёлка · СТЕБЛЕВ Космецевтика",
       description: "Масло для волос с кетоном малины, экстрактом шёлка и растительными экстрактами.",
+      activeIngredients: "Кетон малины\nЭкстракт шёлка\nРастительные экстракты",
+      howToUse: null,
       volume: "50 мл",
       imageUrl: "/images/products/packshot/raspberry-ketone-hair-oil.webp",
-      categoryId: hairCategory.id,
+      categoryId: hair.id,
+      lifecycle: "draft",
     },
     {
       slug: "rosemary-hair-oil",
       title: "Масло для роста волос с розмарином",
-      subtitle: "Уход за волосами · СТЕБЛЕВ Космецевтика",
+      subtitle: "Розмарин и биокомплекс · СТЕБЛЕВ Космецевтика",
       description: "Масло для волос с розмарином и биокомплексом, 50 мл.",
+      activeIngredients: "Масло розмарина\nБиокомплекс",
+      howToUse: null,
       volume: "50 мл",
       imageUrl: "/images/products/packshot/rosemary-hair-oil.webp",
-      categoryId: hairCategory.id,
+      categoryId: hair.id,
+      lifecycle: "draft",
     },
   ];
 
-  for (const draft of brandDrafts) {
-    await prisma.product.upsert({
-      where: { slug: draft.slug },
-      update: {},
-      create: { ...draft, price: 0, stock: 0, ...buildLifecycleFields("draft") },
-    });
-  }
-
-  for (const product of products) {
-    await prisma.product.upsert({
-      where: { slug: product.slug },
-      update: {
-        imageUrl: product.imageUrl,
-        subtitle: product.subtitle,
-        price: product.price,
-        activeIngredients: product.activeIngredients,
-        howToUse: product.howToUse,
-        volume: product.volume,
-      },
-      // Сид создаёт товары СРАЗУ опубликованными: schema-дефолты —
-      // status "draft"/isActive false, поэтому без этого свежий seed даёт
-      // витрину без единого видимого товара. Пара status+isActive строится
-      // только через buildLifecycleFields — единая точка инварианта
-      // isActive === deriveIsActive(status), как и во всех write-путях.
-      create: { ...product, ...buildLifecycleFields("published") },
-    });
+  for (const { lifecycle, ...entry } of catalog) {
+    const content = {
+      title: entry.title,
+      subtitle: entry.subtitle,
+      description: entry.description,
+      activeIngredients: entry.activeIngredients,
+      howToUse: entry.howToUse,
+      volume: entry.volume,
+      imageUrl: entry.imageUrl,
+      categoryId: entry.categoryId,
+    };
+    if (lifecycle === "published" && "price" in entry) {
+      await prisma.product.upsert({
+        where: { slug: entry.slug },
+        update: { ...content, price: entry.price },
+        // Сид создаёт товары витрины СРАЗУ опубликованными: schema-дефолты —
+        // status "draft"/isActive false. Пара status+isActive строится только
+        // через buildLifecycleFields — единая точка инварианта
+        // isActive === deriveIsActive(status), как и во всех write-путях.
+        create: { slug: entry.slug, ...content, price: entry.price, stock: entry.stock, ...buildLifecycleFields("published") },
+      });
+    } else {
+      await prisma.product.upsert({
+        where: { slug: entry.slug },
+        update: content,
+        create: { slug: entry.slug, ...content, price: 0, stock: 0, ...buildLifecycleFields("draft") },
+      });
+    }
   }
 
   // Справочники Routine Finder

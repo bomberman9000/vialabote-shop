@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ProductCard, ProductGrid } from "@/components/product-card";
 import { concernTitle } from "@/lib/concerns";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
+import { toProductCardData } from "@/lib/product-card-data";
 import { SortSelect } from "./sort-select";
 
 export const dynamic = "force-dynamic";
@@ -133,21 +134,8 @@ export default async function CatalogPage({
         <p className="text-brand-500">По этому фильтру пока нет товаров.</p>
       ) : (
         <ProductGrid>
-          {products.map(({ product: p, displayPrice }) => (
-            <ProductCard
-              key={p.id}
-              product={{
-                id: p.id,
-                slug: p.slug,
-                title: p.title,
-                subtitle: p.subtitle,
-                badge: p.badge,
-                price: displayPrice.price,
-                oldPrice: displayPrice.compareAtPrice,
-                imageUrl: p.imageUrl,
-                stock: p.stock,
-              }}
-            />
+          {products.map(({ product: p }) => (
+            <ProductCard key={p.id} product={toProductCardData(p)} />
           ))}
         </ProductGrid>
       )}
@@ -160,7 +148,7 @@ function FilterChip({ href, active, children }: { href: string; active: boolean;
     <a
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`inline-flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold transition-colors duration-200 ${
+      className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold transition-colors duration-200 ${
         active
           ? "border-brand-900 bg-brand-900 text-white"
           : "border-brand-200 text-brand-700 hover:border-brand-400 hover:text-brand-900"

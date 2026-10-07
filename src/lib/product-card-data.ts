@@ -5,6 +5,7 @@ export interface ProductCardData {
   slug: string;
   title: string;
   subtitle?: string | null;
+  volume?: string | null;
   badge?: string | null;
   price: number;
   oldPrice: number | null;
@@ -17,6 +18,7 @@ type CardSource = DisplayPriceInput & {
   slug: string;
   title: string;
   subtitle: string | null;
+  volume: string | null;
   badge: string | null;
   imageUrl: string;
   stock: number;
@@ -33,6 +35,7 @@ export function toProductCardData(product: CardSource, now: Date = new Date()): 
     slug: product.slug,
     title: product.title,
     subtitle: product.subtitle,
+    volume: product.volume,
     badge: product.badge,
     price: displayPrice.price,
     oldPrice: displayPrice.compareAtPrice,

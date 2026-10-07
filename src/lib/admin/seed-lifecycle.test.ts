@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it, expect, vi } from "vitest";
 import { deriveIsActive } from "./product-lifecycle";
 
@@ -8,16 +10,26 @@ import { deriveIsActive } from "./product-lifecycle";
 // инвариант: каждый товар витрины публикуется сидом, черновики без цены — нет,
 // и isActive везде derived из status, а не проставлен независимо.
 
-const recorded = vi.hoisted(() => ({ productCreates: [] as Record<string, unknown>[] }));
+const recorded = vi.hoisted(() => ({
+  productCreates: [] as Record<string, unknown>[],
+  productUpdates: [] as Record<string, unknown>[],
+  categories: [] as { slug: string; name: string }[],
+}));
 
 vi.mock("@prisma/client", () => {
   const id = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2)}`;
   return {
     PrismaClient: class {
-      category = { upsert: async () => ({ id: id("cat") }) };
+      category = {
+        upsert: async (a: { create: { slug: string; name: string } }) => {
+          recorded.categories.push(a.create);
+          return { id: `cat-${a.create.slug}` };
+        },
+      };
       product = {
-        upsert: async (args: { create: Record<string, unknown> }) => {
+        upsert: async (args: { create: Record<string, unknown>; update: Record<string, unknown> }) => {
           recorded.productCreates.push(args.create);
+          recorded.productUpdates.push({ slug: args.create.slug, ...args.update });
           return { id: id("prod") };
         },
         findUnique: async () => ({ id: id("prod") }),
@@ -74,6 +86,53 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
       expect(create.status, `SKU ${slug} должен быть draft`).toBe("draft");
       expect(create.isActive, `SKU ${slug} не должен быть виден`).toBe(deriveIsActive("draft"));
       expect(create.price, `SKU ${slug} — цена не выдумана`).toBe(0);
+    }
+  });
+
+  // Сверка с каталогом бренда vialabote.ru/products (2026-10-07): 11 SKU,
+  // категория и объём как на сайте бренда, packshot существует в public/.
+  it("каталог совпадает с линейкой бренда: категория, объём, фото, контент", async () => {
+    await import("../../../prisma/seed");
+    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(11));
+    const expected: Record<string, { category: string; volume: string }> = {
+      "serum-8-in-1-white-tea": { category: "syvorotki", volume: "50 мл" },
+      "inci-retinal-serum": { category: "syvorotki", volume: "50 мл" },
+      "multi3-anti-acne-serum": { category: "syvorotki", volume: "50 мл" },
+      "serum-resveratrol-vitamin-c": { category: "syvorotki", volume: "50 мл" },
+      "hydrophilic-gel-oil": { category: "ochishchenie", volume: "150 мл" },
+      "hydrophilic-balancing-oil": { category: "ochishchenie", volume: "150 мл" },
+      "beard-oil-steblev": { category: "dlya-muzhchin", volume: "50 мл" },
+      "beard-oil-unscented": { category: "dlya-muzhchin", volume: "50 мл" },
+      "beard-oil-bigman": { category: "dlya-muzhchin", volume: "50 мл" },
+      "raspberry-ketone-hair-oil": { category: "uhod-za-volosami", volume: "50 мл" },
+      "rosemary-hair-oil": { category: "uhod-za-volosami", volume: "50 мл" },
+    };
+    expect(new Map(recorded.categories.map((c) => [c.slug, c.name]))).toEqual(
+      new Map([
+        ["syvorotki", "Сыворотки"],
+        ["ochishchenie", "Очищение"],
+        ["dlya-muzhchin", "Для бороды"],
+        ["uhod-za-volosami", "Для волос"],
+      ]),
+    );
+    for (const create of recorded.productCreates) {
+      const slug = String(create.slug);
+      expect(create.categoryId, slug).toBe(`cat-${expected[slug].category}`);
+      expect(create.volume, slug).toBe(expected[slug].volume);
+      expect(String(create.title).length, slug).toBeGreaterThan(0);
+      expect(String(create.subtitle).length, slug).toBeGreaterThan(0);
+      expect(String(create.description).length, slug).toBeGreaterThan(0);
+      const image = String(create.imageUrl);
+      expect(image, slug).toMatch(/^\/images\/products\/packshot\/[a-z0-9-]+\.webp$/);
+      expect(fs.existsSync(path.join(process.cwd(), "public", image)), image).toBe(true);
+    }
+    // Повторный сид обновляет контент у всех SKU, но цену/остаток/статус
+    // черновиков не трогает — их задаёт владелец.
+    for (const update of recorded.productUpdates.filter((u) => BRAND_DRAFT_SKUS.includes(String(u.slug)))) {
+      expect(update).not.toHaveProperty("price");
+      expect(update).not.toHaveProperty("stock");
+      expect(update).not.toHaveProperty("status");
+      expect(update).not.toHaveProperty("isActive");
     }
   });
 });

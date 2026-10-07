@@ -46,6 +46,23 @@ site1_extra() {
 }
 snapshot() { bash "$HERE/site1-healthcheck.sh" | sed '/^-- info --$/,$d'; site1_extra; }
 https() { curl -s -m 30 --resolve "$DOMAIN:443:127.0.0.1" "$@"; }
+# `systemctl reload nginx` is asynchronous: it returns once the master got the
+# signal, while old workers keep answering with the OLD config for a moment.
+# Every check right after a reload therefore polls until the new config serves.
+wait_for() {  # $1 = timeout seconds, rest = command that must succeed
+  local t=$1; shift
+  for _ in $(seq 1 $((t * 2))); do "$@" >/dev/null 2>&1 && return 0; sleep 0.5; done
+  return 1
+}
+acme_probe() {  # $1 = token; succeeds when nginx serves the webroot file for $DOMAIN
+  [ "$(curl -s -m 5 --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/.well-known/acme-challenge/$1")" = "$1" ]
+}
+https_ready() {  # the NEW config is live: shop cert served for SNI $DOMAIN AND http -> 301
+  # (a bare 200 is not enough: old workers answer SNI $DOMAIN with SITE_1's
+  # default 443 server, which also returns 200)
+  curl -skv -o /dev/null -m 5 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/" 2>&1 | grep -qiE "subject:.*CN ?= ?$DOMAIN" &&
+  [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/")" = 301 ]
+}
 # Place a vhost; on nginx -t failure take OUR file out again and stop (no reload).
 apply_vhost() {  # $1 = rendered file
   install -m 0644 -o root -g root "$1" "$AVAIL"
@@ -60,6 +77,7 @@ apply_vhost() {  # $1 = rendered file
 }
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo bash $0)"
+VERIFY_ONLY=0; [ "${1:-}" = "--verify-only" ] && VERIFY_ONLY=1
 mkdir -p "$WORK"; chmod 700 "$WORK"
 
 step "0/5 gates (read-only)"
@@ -78,6 +96,12 @@ for f in "$AVAIL" "$ENABLED"; do [ -e "$f" ] && [ ! -e "$LIVE/fullchain.pem" ] &
 grep -rlq --exclude="$NAME" "$DOMAIN" /etc/nginx/sites-enabled/ 2>/dev/null && die "$DOMAIN already configured in another nginx file"
 echo "ok"
 
+if [ "$VERIFY_ONLY" = 1 ]; then
+  echo "--verify-only: skipping steps 1-3 (no nginx change, no reload, no certificate issuance)"
+  [ -s "$LIVE/fullchain.pem" ] || die "--verify-only: certificate $LIVE missing"
+  { [ -L "$ENABLED" ] && grep -q "listen 443 ssl" "$AVAIL"; } || die "--verify-only: HTTPS vhost $AVAIL not enabled"
+  wait_for 30 https_ready || die "--verify-only: live config does not serve the shop certificate + redirect"
+else
 step "1/5 HTTP vhost + ACME webroot"
 install -d -m 0755 "$ACME_ROOT/.well-known/acme-challenge"
 proxy_block() { cat <<EOF
@@ -109,9 +133,9 @@ EOF
 if [ ! -s "$LIVE/fullchain.pem" ]; then
   apply_vhost "$WORK/http.conf"
   echo "probe-$STAMP" > "$ACME_ROOT/.well-known/acme-challenge/probe-$STAMP"
-  PROBE=$(curl -s -m 15 --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/.well-known/acme-challenge/probe-$STAMP")
+  if wait_for 30 acme_probe "probe-$STAMP"; then PROBE_OK=1; else PROBE_OK=0; fi
   rm -f "$ACME_ROOT/.well-known/acme-challenge/probe-$STAMP"
-  [ "$PROBE" = "probe-$STAMP" ] || die "ACME webroot not served for $DOMAIN (rollback: site2-public-https-rollback.sh)"
+  [ "$PROBE_OK" = 1 ] || die "ACME webroot not served for $DOMAIN within 30 s after reload (rollback: site2-public-https-rollback.sh)"
   echo "ok: http://$DOMAIN -> app $(curl -s -o /dev/null -m 20 -w '%{http_code}' --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/"), ACME webroot served"
 else
   echo "certificate already present — skipping HTTP-only phase"
@@ -150,7 +174,10 @@ $(proxy_block)
 }
 EOF
 apply_vhost "$WORK/https.conf"
+wait_for 30 https_ready || die "HTTPS for $DOMAIN not live within 30 s after reload (rollback: site2-public-https-rollback.sh)"
 echo "ok: $AVAIL enabled"
+
+fi  # end of steps 1-3 (skipped with --verify-only)
 
 step "4/5 verification over TLS"
 R=$(curl -s -o /dev/null -m 15 -w '%{http_code} %{redirect_url}' --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/catalog?x=1")
@@ -179,8 +206,13 @@ echo "renewal conf: $(grep -E '^(authenticator|renew_hook|deploy_hook)' "$RENEW_
 
 step "5/5 SITE_1 post-check"
 snapshot > "$WORK/site1-post.txt"
-diff "$WORK/site1-pre.txt" "$WORK/site1-post.txt" && SITE1=UNCHANGED || SITE1=CHANGED
-same() { diff <(grep -E "^($1)" "$WORK/site1-pre.txt") <(grep -E "^($1)" "$WORK/site1-post.txt") >/dev/null && echo UNCHANGED || echo CHANGED; }
+# Baseline = oldest pre-snapshot of any run of this script (taken before the
+# first nginx change), so a re-run is still compared with the original state.
+BASE=$(ls -1dt /root/vialabote-shop-https-*/site1-pre.txt 2>/dev/null | tail -1 || true)
+[ -n "$BASE" ] || BASE="$WORK/site1-pre.txt"
+echo "SITE_1 baseline: $BASE"
+diff "$BASE" "$WORK/site1-post.txt" && SITE1=UNCHANGED || SITE1=CHANGED
+same() { diff <(grep -E "^($1)" "$BASE") <(grep -E "^($1)" "$WORK/site1-post.txt") >/dev/null && echo UNCHANGED || echo CHANGED; }
 
 ok=PASS
 for v in "$REDIR" "$TLS" "$RENEW"; do [ "$v" = PASS ] || ok=FAIL; done

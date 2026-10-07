@@ -255,3 +255,19 @@ NOTES=—
 | `concern/concern-men.webp` | men | navy, «шлифованная» фактура, золотая линия |
 
 Процедурная генерация (canvas, seeded, плёночное зерно), 1200×1500 WebP. Ни одно изображение не изображает продукт или упаковку.
+
+## Тоники (2026-10-07) — owner originals, MANUAL_REVIEW
+
+| SKU | Original (unchanged) | sha256 (prefix) | Card image | PDP gallery |
+|---|---|---|---|---|
+| toner-serum-ph6 | `original/toner-serum-ph6-original.jpeg` 1152×1536 | 558f5fbbfdf690c6 | `enhanced/toner-serum-ph6.webp` → `public/images/products/packshot/` | `public/images/products/gallery/toner-serum-ph6.jpg` (byte copy) |
+| toner-serum-ph55 | `original/toner-serum-ph55-original.jpeg` 1440×900 | c1bdee94c2072531 | `enhanced/toner-serum-ph55.webp` → `public/images/products/packshot/` | `public/images/products/gallery/toner-serum-ph55.jpg` (byte copy) |
+
+- Originals are editorial scenes with a transparent bottle; automatic background
+  removal would damage the clear cap/liquid, so **no cut-out** was made.
+- Card image = `scripts/media/tonic-card.py`: 3:4 crop around the bottle (bottle ≈ 70%
+  of stage height), bottle+label box kept pixel-identical to the original (asserted by
+  the script), only the surrounding background faded to white so it reads as the ivory
+  stage. Label/text untouched, no AI.
+- **MANUAL_REVIEW**: a soft halo of the original background (peach / lilac) stays around
+  the bottle. A hand-made mask would give a fully clean stage.

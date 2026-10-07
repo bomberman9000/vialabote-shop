@@ -13,6 +13,7 @@ import { deriveIsActive } from "./product-lifecycle";
 const recorded = vi.hoisted(() => ({
   productCreates: [] as Record<string, unknown>[],
   productUpdates: [] as Record<string, unknown>[],
+  media: [] as Record<string, unknown>[],
   categories: [] as { slug: string; name: string }[],
 }));
 
@@ -34,6 +35,12 @@ vi.mock("@prisma/client", () => {
         },
         findUnique: async () => ({ id: id("prod") }),
         update: async () => ({}),
+      };
+      mediaAsset = {
+        upsert: async (a: { create: Record<string, unknown> }) => {
+          recorded.media.push(a.create);
+          return {};
+        },
       };
       concern = { upsert: async (a: { create: { slug: string } }) => ({ id: a.create.slug }) };
       skinType = { upsert: async (a: { create: { slug: string } }) => ({ id: a.create.slug }) };
@@ -60,6 +67,8 @@ const OWNER_PRICES: Record<string, number> = {
   "beard-oil-bigman": 50000,
   "raspberry-ketone-hair-oil": 48000,
   "rosemary-hair-oil": 45000,
+  "toner-serum-ph6": 52000,
+  "toner-serum-ph55": 55000,
 };
 // SKU без подтверждённого остатка: сид не выдумывает наличие (stock=0).
 const NO_CONFIRMED_STOCK = [
@@ -68,12 +77,14 @@ const NO_CONFIRMED_STOCK = [
   "beard-oil-bigman",
   "raspberry-ketone-hair-oil",
   "rosemary-hair-oil",
+  "toner-serum-ph6",
+  "toner-serum-ph55",
 ];
 
 describe("prisma/seed.ts — clean-checkout lifecycle", () => {
   it("публикует все SKU с owner-confirmed ценой и не выдумывает остаток", async () => {
     await import("../../../prisma/seed");
-    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(11));
+    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(13));
 
     const bySlug = new Map(recorded.productCreates.map((c) => [String(c.slug), c]));
     expect([...bySlug.keys()].sort()).toEqual(Object.keys(OWNER_PRICES).sort());
@@ -96,7 +107,7 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
   // категория и объём как на сайте бренда, packshot существует в public/.
   it("каталог совпадает с линейкой бренда: категория, объём, фото, контент", async () => {
     await import("../../../prisma/seed");
-    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(11));
+    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(13));
     const expected: Record<string, { category: string; volume: string }> = {
       "serum-8-in-1-white-tea": { category: "syvorotki", volume: "50 мл" },
       "inci-retinal-serum": { category: "syvorotki", volume: "50 мл" },
@@ -109,6 +120,8 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
       "beard-oil-bigman": { category: "dlya-muzhchin", volume: "50 мл" },
       "raspberry-ketone-hair-oil": { category: "uhod-za-volosami", volume: "50 мл" },
       "rosemary-hair-oil": { category: "uhod-za-volosami", volume: "50 мл" },
+      "toner-serum-ph6": { category: "toniki", volume: "200 мл" },
+      "toner-serum-ph55": { category: "toniki", volume: "200 мл" },
     };
     expect(new Map(recorded.categories.map((c) => [c.slug, c.name]))).toEqual(
       new Map([
@@ -116,6 +129,7 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
         ["ochishchenie", "Очищение"],
         ["dlya-muzhchin", "Для бороды"],
         ["uhod-za-volosami", "Для волос"],
+        ["toniki", "Тоники"],
       ]),
     );
     for (const create of recorded.productCreates) {
@@ -128,6 +142,16 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
       const image = String(create.imageUrl);
       expect(image, slug).toMatch(/^\/images\/products\/packshot\/[a-z0-9-]+\.webp$/);
       expect(fs.existsSync(path.join(process.cwd(), "public", image)), image).toBe(true);
+    }
+    // Тоники: исходные фото владельца уходят в PDP-галерею как есть.
+    expect(recorded.media.map((m) => m.url).sort()).toEqual([
+      "/images/products/gallery/toner-serum-ph55.jpg",
+      "/images/products/gallery/toner-serum-ph6.jpg",
+    ]);
+    for (const m of recorded.media) {
+      expect(m.purpose).toBe("PRODUCT_GALLERY");
+      expect(m.validationState).toBe("valid");
+      expect(fs.existsSync(path.join(process.cwd(), "public", String(m.url))), String(m.url)).toBe(true);
     }
     // Повторный сид не трогает остаток и статус — их задаёт владелец.
     for (const update of recorded.productUpdates) {

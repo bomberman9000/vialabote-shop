@@ -17,6 +17,7 @@ async function main() {
   const cleansing = await category("ochishchenie", "Очищение");
   const men = await category("dlya-muzhchin", "Для бороды");
   const hair = await category("uhod-za-volosami", "Для волос");
+  const toners = await category("toniki", "Тоники");
 
   // КАТАЛОГ = 11 товаров линейки бренда, сверены с vialabote.ru/products
   // (название, категория, объём, описание, активные компоненты, способ
@@ -40,6 +41,9 @@ async function main() {
     volume: string;
     imageUrl: string;
     categoryId: string;
+    // PDP-галерея: исходные фото владельца (без изменений), идут после
+    // карточного packshot. width/height/sizeBytes — реальные параметры файла.
+    gallery?: { url: string; storageKey: string; width: number; height: number; sizeBytes: number }[];
   } & ({ lifecycle: "published"; price: number; stock: number } | { lifecycle: "draft" });
 
   const catalog: CatalogEntry[] = [
@@ -215,9 +219,50 @@ async function main() {
       price: 45000,
       stock: 0, // остаток не подтверждён — владелец задаёт в админке/Telegram
     },
+    // Тоники — новые SKU (2026-10-07): на vialabote.ru их нет, источник —
+    // оригинальные фото владельца (assets/product-media/original/toner-*).
+    // Тексты — только то, что читается на этикетке; цена подтверждена
+    // владельцем; остаток не подтверждён. Карточное фото — кадр оригинала с
+    // фоном, растворённым в белое (scripts/media/tonic-card.py, MANUAL_REVIEW).
+    {
+      slug: "toner-serum-ph6",
+      title: "Тоник-сыворотка pH 6.0",
+      subtitle: "Увлажняющая эссенция с минеральной солью и экстрактом жемчуга",
+      description:
+        "Увлажняющая эссенция с минеральной солью реликтового озера и экстрактом жемчуга. Рекомендован для всех типов кожи.\nМинеральное восстановление. Увлажнение и сияние. Упругость и эластичность.",
+      activeIngredients: "Минеральная соль реликтового озера\nЭкстракт жемчуга",
+      howToUse: null,
+      volume: "200 мл",
+      imageUrl: "/images/products/packshot/toner-serum-ph6.webp",
+      categoryId: toners.id,
+      gallery: [
+        { url: "/images/products/gallery/toner-serum-ph6.jpg", storageKey: "seed/toner-serum-ph6-original", width: 1152, height: 1536, sizeBytes: 330578 },
+      ],
+      lifecycle: "published",
+      price: 52000,
+      stock: 0, // остаток не подтверждён — владелец задаёт в админке/Telegram
+    },
+    {
+      slug: "toner-serum-ph55",
+      title: "Тоник-сыворотка для лица мультиактивный pH 5.5",
+      subtitle: "Для жирной, комбинированной и проблемной кожи",
+      description:
+        "Интеллектуальный коктейль для жирной, комбинированной и проблемной кожи.\nТройной кислотный комплекс. Пробиотики. Эко-увлажнение. Аминокислоты.",
+      activeIngredients: "Тройной кислотный комплекс\nПробиотики\nАминокислоты",
+      howToUse: null,
+      volume: "200 мл",
+      imageUrl: "/images/products/packshot/toner-serum-ph55.webp",
+      categoryId: toners.id,
+      gallery: [
+        { url: "/images/products/gallery/toner-serum-ph55.jpg", storageKey: "seed/toner-serum-ph55-original", width: 1440, height: 900, sizeBytes: 321307 },
+      ],
+      lifecycle: "published",
+      price: 55000,
+      stock: 0, // остаток не подтверждён — владелец задаёт в админке/Telegram
+    },
   ];
 
-  for (const { lifecycle, ...entry } of catalog) {
+  for (const { lifecycle, gallery, ...entry } of catalog) {
     const content = {
       title: entry.title,
       subtitle: entry.subtitle,
@@ -243,6 +288,27 @@ async function main() {
         where: { slug: entry.slug },
         update: content,
         create: { slug: entry.slug, ...content, price: 0, stock: 0, ...buildLifecycleFields("draft") },
+      });
+    }
+
+    for (const [order, media] of (gallery ?? []).entries()) {
+      const product = await prisma.product.findUnique({ where: { slug: entry.slug } });
+      if (!product) continue;
+      const row = {
+        purpose: "PRODUCT_GALLERY",
+        url: media.url,
+        width: media.width,
+        height: media.height,
+        mimeType: "image/jpeg",
+        sizeBytes: media.sizeBytes,
+        validationState: "valid",
+        order,
+        productId: product.id,
+      };
+      await prisma.mediaAsset.upsert({
+        where: { storageKey: media.storageKey },
+        update: row,
+        create: { ...row, storageKey: media.storageKey, createdBy: "seed" },
       });
     }
   }

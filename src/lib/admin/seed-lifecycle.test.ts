@@ -45,18 +45,24 @@ vi.mock("@prisma/client", () => {
   };
 });
 
-// SKU, которые сид обязан опубликовать (витрина магазина), и SKU линейки
-// бренда, перенесённые черновиками без утверждённой цены (price=0) — они не
-// должны попадать на витрину, пока владелец не задаст цену и не опубликует.
-const STOREFRONT_SKUS = [
-  "serum-8-in-1-white-tea",
-  "serum-resveratrol-vitamin-c",
-  "inci-retinal-serum",
-  "multi3-anti-acne-serum",
-  "hydrophilic-gel-oil",
-  "beard-oil-steblev",
-];
-const BRAND_DRAFT_SKUS = [
+// Owner-confirmed цены собственного магазина (2026-10-07), в копейках.
+// Цены WB в магазин не переносятся; сид обязан опубликовать все 11 SKU
+// именно с этими ценами.
+const OWNER_PRICES: Record<string, number> = {
+  "serum-8-in-1-white-tea": 51000,
+  "inci-retinal-serum": 59000,
+  "multi3-anti-acne-serum": 57000,
+  "serum-resveratrol-vitamin-c": 63000,
+  "hydrophilic-gel-oil": 50000,
+  "hydrophilic-balancing-oil": 60000,
+  "beard-oil-steblev": 55000,
+  "beard-oil-unscented": 59000,
+  "beard-oil-bigman": 50000,
+  "raspberry-ketone-hair-oil": 48000,
+  "rosemary-hair-oil": 45000,
+};
+// SKU без подтверждённого остатка: сид не выдумывает наличие (stock=0).
+const NO_CONFIRMED_STOCK = [
   "hydrophilic-balancing-oil",
   "beard-oil-unscented",
   "beard-oil-bigman",
@@ -65,27 +71,24 @@ const BRAND_DRAFT_SKUS = [
 ];
 
 describe("prisma/seed.ts — clean-checkout lifecycle", () => {
-  it("публикует товары витрины и создаёт SKU без цены скрытыми черновиками", async () => {
+  it("публикует все SKU с owner-confirmed ценой и не выдумывает остаток", async () => {
     await import("../../../prisma/seed");
-    const total = STOREFRONT_SKUS.length + BRAND_DRAFT_SKUS.length;
-    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(total));
+    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(11));
 
     const bySlug = new Map(recorded.productCreates.map((c) => [String(c.slug), c]));
-    expect([...bySlug.keys()].sort()).toEqual([...STOREFRONT_SKUS, ...BRAND_DRAFT_SKUS].sort());
+    expect([...bySlug.keys()].sort()).toEqual(Object.keys(OWNER_PRICES).sort());
 
-    for (const slug of STOREFRONT_SKUS) {
+    for (const [slug, price] of Object.entries(OWNER_PRICES)) {
       const create = bySlug.get(slug)!;
       expect(create.status, `SKU ${slug} должен быть published`).toBe("published");
       // isActive не проставляется независимо — только derived из status.
       expect(create.isActive, `SKU ${slug} должен быть виден в каталоге`).toBe(deriveIsActive("published"));
-      expect(create.price as number, `SKU ${slug} должен иметь цену`).toBeGreaterThan(0);
+      expect(create.price, `SKU ${slug} — цена владельца`).toBe(price);
+      if (NO_CONFIRMED_STOCK.includes(slug)) expect(create.stock, `SKU ${slug} — остаток не выдуман`).toBe(0);
     }
-
-    for (const slug of BRAND_DRAFT_SKUS) {
-      const create = bySlug.get(slug)!;
-      expect(create.status, `SKU ${slug} должен быть draft`).toBe("draft");
-      expect(create.isActive, `SKU ${slug} не должен быть виден`).toBe(deriveIsActive("draft"));
-      expect(create.price, `SKU ${slug} — цена не выдумана`).toBe(0);
+    // Повторный сид держит цену владельца у существующих строк.
+    for (const update of recorded.productUpdates) {
+      expect(update.price, String(update.slug)).toBe(OWNER_PRICES[String(update.slug)]);
     }
   });
 
@@ -126,10 +129,8 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
       expect(image, slug).toMatch(/^\/images\/products\/packshot\/[a-z0-9-]+\.webp$/);
       expect(fs.existsSync(path.join(process.cwd(), "public", image)), image).toBe(true);
     }
-    // Повторный сид обновляет контент у всех SKU, но цену/остаток/статус
-    // черновиков не трогает — их задаёт владелец.
-    for (const update of recorded.productUpdates.filter((u) => BRAND_DRAFT_SKUS.includes(String(u.slug)))) {
-      expect(update).not.toHaveProperty("price");
+    // Повторный сид не трогает остаток и статус — их задаёт владелец.
+    for (const update of recorded.productUpdates) {
       expect(update).not.toHaveProperty("stock");
       expect(update).not.toHaveProperty("status");
       expect(update).not.toHaveProperty("isActive");

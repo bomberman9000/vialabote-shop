@@ -24,14 +24,12 @@ async function main() {
   // сайта бренда без добавлений; subtitle — короткая выжимка его же
   // формулировок. Где на сайте бренда нет состава/применения, поле пустое.
   //
-  // Цена: на сайте бренда цен нет (продажа через маркетплейсы).
-  // - published: цены — оценка по аналогам WB (коммит 468d7ba), НЕ
-  //   подтверждены владельцем; сид их сохраняет, чтобы витрина не опустела.
-  // - draft: price=0/stock=0, create-only по цене/остатку/статусу —
-  //   опубликовать можно только после того, как владелец задаст цену
-  //   (publish без цены отклоняется, см. transitionProduct).
-  // Контентные поля сид обновляет у всех 11 SKU — источник истины для них
-  // сайт бренда; цену/остаток/статус черновиков сид не трогает.
+  // Цена: owner-confirmed цены собственного магазина (2026-10-07) — source of
+  // truth для Vialabote Shop. Цены/скидки Wildberries в магазин не переносятся.
+  // Остаток — отдельное поле: у SKU без подтверждённого остатка stock=0
+  // («Нет в наличии»), пока владелец не задаст его в админке/Telegram.
+  // Контентные поля и цену сид обновляет у всех SKU; остаток и статус —
+  // только при создании (их меняет владелец).
   type CatalogEntry = {
     slug: string;
     title: string;
@@ -59,7 +57,7 @@ async function main() {
       imageUrl: "/images/products/packshot/hyaluron-8in1.webp",
       categoryId: serums.id,
       lifecycle: "published",
-      price: 59000,
+      price: 51000,
       stock: 20,
     },
     {
@@ -76,7 +74,7 @@ async function main() {
       imageUrl: "/images/products/packshot/retinal.webp",
       categoryId: serums.id,
       lifecycle: "published",
-      price: 60400,
+      price: 59000,
       stock: 10,
     },
     {
@@ -93,7 +91,7 @@ async function main() {
       imageUrl: "/images/products/packshot/multi3.webp",
       categoryId: serums.id,
       lifecycle: "published",
-      price: 56000,
+      price: 57000,
       stock: 18,
     },
     {
@@ -110,7 +108,7 @@ async function main() {
       imageUrl: "/images/products/packshot/resveratrol-c.webp",
       categoryId: serums.id,
       lifecycle: "published",
-      price: 55000,
+      price: 63000,
       stock: 15,
     },
     {
@@ -127,7 +125,7 @@ async function main() {
       imageUrl: "/images/products/packshot/hydrophilic-oil.webp",
       categoryId: cleansing.id,
       lifecycle: "published",
-      price: 89000,
+      price: 50000,
       stock: 25,
     },
     {
@@ -144,7 +142,7 @@ async function main() {
       imageUrl: "/images/products/packshot/beard-oil.webp",
       categoryId: men.id,
       lifecycle: "published",
-      price: 69000,
+      price: 55000,
       stock: 12,
     },
     {
@@ -157,7 +155,9 @@ async function main() {
       volume: "150 мл",
       imageUrl: "/images/products/packshot/hydrophilic-balancing-oil.webp",
       categoryId: cleansing.id,
-      lifecycle: "draft",
+      lifecycle: "published",
+      price: 60000,
+      stock: 0, // остаток не подтверждён — владелец задаёт в админке/Telegram
     },
     {
       slug: "beard-oil-unscented",
@@ -169,7 +169,9 @@ async function main() {
       volume: "50 мл",
       imageUrl: "/images/products/packshot/beard-oil-unscented.webp",
       categoryId: men.id,
-      lifecycle: "draft",
+      lifecycle: "published",
+      price: 59000,
+      stock: 0, // остаток не подтверждён — владелец задаёт в админке/Telegram
     },
     {
       slug: "beard-oil-bigman",
@@ -181,7 +183,9 @@ async function main() {
       volume: "50 мл",
       imageUrl: "/images/products/packshot/beard-oil-bigman.webp",
       categoryId: men.id,
-      lifecycle: "draft",
+      lifecycle: "published",
+      price: 50000,
+      stock: 0, // остаток не подтверждён — владелец задаёт в админке/Telegram
     },
     {
       slug: "raspberry-ketone-hair-oil",
@@ -193,7 +197,9 @@ async function main() {
       volume: "50 мл",
       imageUrl: "/images/products/packshot/raspberry-ketone-hair-oil.webp",
       categoryId: hair.id,
-      lifecycle: "draft",
+      lifecycle: "published",
+      price: 48000,
+      stock: 0, // остаток не подтверждён — владелец задаёт в админке/Telegram
     },
     {
       slug: "rosemary-hair-oil",
@@ -205,7 +211,9 @@ async function main() {
       volume: "50 мл",
       imageUrl: "/images/products/packshot/rosemary-hair-oil.webp",
       categoryId: hair.id,
-      lifecycle: "draft",
+      lifecycle: "published",
+      price: 45000,
+      stock: 0, // остаток не подтверждён — владелец задаёт в админке/Telegram
     },
   ];
 

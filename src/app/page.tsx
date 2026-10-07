@@ -5,7 +5,7 @@ import { FlaskConical, Sprout, ShieldCheck, Factory, Sparkles } from "lucide-rea
 import { prisma } from "@/lib/prisma";
 import { ProductCard } from "@/components/product-card";
 import { Hero } from "@/components/hero";
-import { CONCERNS } from "@/lib/concerns";
+import { concernTitle } from "@/lib/concerns";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +52,26 @@ export default async function HomePage() {
     orderBy: { createdAt: "desc" },
     include: { discount: true },
   });
+
+  // Плитки потребностей строятся по БД: список — из Concern, картинка — из
+  // реального опубликованного товара этой потребности. Потребность без единого
+  // видимого товара плитку не получает, поэтому архивация SKU не оставляет
+  // ссылку на пустой фильтр, а новый размеченный товар подхватывается сам.
+  const concerns = await prisma.concern.findMany({ orderBy: { name: "asc" } });
+  const concernTiles = (
+    await Promise.all(
+      concerns.map(async (concern) => {
+        const product = await prisma.product.findFirst({
+          where: { isActive: true, concerns: { some: { concern: { slug: concern.slug } } } },
+          orderBy: { createdAt: "desc" },
+          select: { imageUrl: true },
+        });
+        return product
+          ? { slug: concern.slug, title: concernTitle(concern), image: product.imageUrl }
+          : null;
+      }),
+    )
+  ).filter((tile): tile is NonNullable<typeof tile> => tile !== null);
 
   return (
     <div className="flex flex-col gap-14 md:gap-20">
@@ -112,35 +132,39 @@ export default async function HomePage() {
         )}
       </section>
 
-      {/* SHOP BY CONCERN — только реальные товары, без фиктивной таксономии */}
-      <section id="concerns">
-        <h2 className="mb-6 font-display text-2xl text-brand-800">Подберите уход по потребности</h2>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          {CONCERNS.map((concern) => (
-            <Link
-              key={concern.slug}
-              href={`/catalog?concern=${concern.slug}`}
-              className="card group flex flex-col overflow-hidden transition-transform hover:-translate-y-0.5"
-            >
-              <div className="relative aspect-square bg-brand-50">
-                <Image
-                  src={concern.image}
-                  alt={concern.title}
-                  fill
-                  className="object-contain p-6"
-                  sizes="200px"
-                />
-              </div>
-              <div className="flex flex-1 flex-col gap-1 p-4">
-                <span className="text-sm font-medium text-brand-800">{concern.title}</span>
-                <span className="mt-auto text-xs text-brand-500 group-hover:underline">
-                  Смотреть →
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
+      {/* SHOP BY CONCERN — состав и картинки из БД, без фиктивной таксономии */}
+      {concernTiles.length > 0 && (
+        <section id="concerns">
+          <h2 className="mb-6 font-display text-2xl text-brand-800">
+            Подберите уход по потребности
+          </h2>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+            {concernTiles.map((concern) => (
+              <Link
+                key={concern.slug}
+                href={`/catalog?concern=${concern.slug}`}
+                className="card group flex flex-col overflow-hidden transition-transform hover:-translate-y-0.5"
+              >
+                <div className="relative aspect-square bg-brand-50">
+                  <Image
+                    src={concern.image}
+                    alt={concern.title}
+                    fill
+                    className="object-contain p-6"
+                    sizes="200px"
+                  />
+                </div>
+                <div className="flex flex-1 flex-col gap-1 p-4">
+                  <span className="text-sm font-medium text-brand-800">{concern.title}</span>
+                  <span className="mt-auto text-xs text-brand-500 group-hover:underline">
+                    Смотреть →
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* BRAND STORY */}
       <section id="about" className="card-dark grid gap-8 p-8 md:grid-cols-2 md:p-14">

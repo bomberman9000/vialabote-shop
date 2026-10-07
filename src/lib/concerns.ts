@@ -1,46 +1,23 @@
-// Статическая карта "потребность → товары". Не отдельная модель в БД —
-// на 6 SKU полноценная taxonomy избыточна (см. отчёт). Каждая потребность
-// подтверждена реальным составом/назначением товара, ничего не выдумано.
-export interface Concern {
-  slug: string;
-  title: string;
-  productSlugs: string[];
-  image: string;
-}
+// Витринные названия потребностей — тонкий слой поверх таблицы Concern.
+//
+// Источник истины по составу потребностей и по тому, какие товары в них
+// попадают, — БД (Concern + ProductConcern). Слаг всегда канонический, из
+// Concern.slug; никаких списков productSlugs здесь больше нет, иначе архивация
+// товара оставляла бы на витрине плитку-призрак, а созданный в админке товар
+// не мог бы в неё попасть без правки кода.
+//
+// Остаётся только витринная формулировка заголовка: у Routine Finder и у
+// витрины разный язык для одного и того же слага ("Сухость" против
+// "Увлажнение"). Для слага без override берётся Concern.name из БД — поэтому
+// потребность, добавленная в БД, появляется на витрине сама.
+export const CONCERN_DISPLAY_TITLES: Record<string, string> = {
+  acne: "Акне и несовершенства",
+  "anti-age": "Anti-age и упругость",
+  dryness: "Увлажнение",
+  "dull-tone": "Сияние и тон кожи",
+  men: "Мужской уход",
+};
 
-export const CONCERNS: Concern[] = [
-  {
-    slug: "acne",
-    title: "Акне и несовершенства",
-    productSlugs: ["multi3-anti-acne-serum"],
-    image: "/images/products/antiaa2.webp",
-  },
-  {
-    slug: "anti-age",
-    title: "Anti-age и упругость",
-    productSlugs: ["inci-retinal-serum"],
-    image: "/images/products/retinal23.webp",
-  },
-  {
-    slug: "hydration",
-    title: "Увлажнение",
-    productSlugs: ["serum-8-in-1-white-tea", "hydrophilic-gel-oil"],
-    image: "/images/products/8in1.webp",
-  },
-  {
-    slug: "glow",
-    title: "Сияние и тон кожи",
-    productSlugs: ["serum-resveratrol-vitamin-c"],
-    image: "/images/products/rastrovetrol2.webp",
-  },
-  {
-    slug: "men",
-    title: "Мужской уход",
-    productSlugs: ["beard-oil-steblev"],
-    image: "/images/products/maslob2.webp",
-  },
-];
-
-export function getConcern(slug: string | undefined): Concern | undefined {
-  return CONCERNS.find((c) => c.slug === slug);
+export function concernTitle(concern: { slug: string; name: string }): string {
+  return CONCERN_DISPLAY_TITLES[concern.slug] ?? concern.name;
 }

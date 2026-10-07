@@ -2,20 +2,24 @@ import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ProductCard } from "@/components/product-card";
-import { CONCERNS, getConcern } from "@/lib/concerns";
+import { concernTitle } from "@/lib/concerns";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 import { SortSelect } from "./sort-select";
 
 export const dynamic = "force-dynamic";
 
-export function generateMetadata({
+export async function generateMetadata({
   searchParams,
 }: {
   searchParams: { concern?: string };
-}): Metadata {
-  const concern = getConcern(searchParams.concern);
+}): Promise<Metadata> {
+  // Потребность резолвится по БД, а не по статическому списку: неизвестный
+  // слаг в query даёт обычный заголовок каталога, как и раньше.
+  const concern = searchParams.concern
+    ? await prisma.concern.findUnique({ where: { slug: searchParams.concern } })
+    : null;
   return {
-    title: concern ? `${concern.title} — Каталог Via Labote` : "Каталог — Via Labote",
+    title: concern ? `${concernTitle(concern)} — Каталог Via Labote` : "Каталог — Via Labote",
     // Отфильтрованные/отсортированные вариации каталога не индексируем отдельно —
     // избегаем дублей и бесконечного crawl-space на query-параметрах.
     alternates: { canonical: "/catalog" },
@@ -44,14 +48,20 @@ export default async function CatalogPage({
 }: {
   searchParams: { category?: string; concern?: string; sort?: string };
 }) {
-  const categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
-  const concern = getConcern(searchParams.concern);
+  const [categories, concerns] = await Promise.all([
+    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.concern.findMany({ orderBy: { name: "asc" } }),
+  ]);
+  const concern = concerns.find((c) => c.slug === searchParams.concern);
   const sort = SORT_OPTIONS.find((s) => s.value === searchParams.sort) ?? SORT_OPTIONS[0];
 
   const where: Prisma.ProductWhereInput = {
     isActive: true,
     ...(searchParams.category ? { category: { slug: searchParams.category } } : {}),
-    ...(concern ? { slug: { in: concern.productSlugs } } : {}),
+    // Фильтр по потребности идёт через связь ProductConcern, а не через
+    // захардкоженный список слагов: товар, размеченный в админке/Telegram,
+    // попадает сюда сам, архивированный — уходит вместе с isActive.
+    ...(concern ? { concerns: { some: { concern: { slug: concern.slug } } } } : {}),
   };
 
   // Сортировка по цене — по effective price (с учётом скидки), а не по
@@ -75,7 +85,7 @@ export default async function CatalogPage({
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="font-display text-2xl text-brand-800">
-          {concern ? concern.title : "Каталог"}
+          {concern ? concernTitle(concern) : "Каталог"}
         </h1>
         <p className="mt-1 text-sm text-brand-500">
           Найдено {products.length} {products.length === 1 ? "товар" : "товара"}
@@ -100,13 +110,13 @@ export default async function CatalogPage({
             </a>
           ))}
           <span className="mx-1 w-px self-stretch bg-brand-200" aria-hidden="true" />
-          {CONCERNS.map((c) => (
+          {concerns.map((c) => (
             <a
-              key={c.slug}
+              key={c.id}
               href={buildHref({ concern: c.slug, sort: searchParams.sort })}
               className={`btn-outline text-xs ${searchParams.concern === c.slug ? "bg-brand-100" : ""}`}
             >
-              {c.title}
+              {concernTitle(c)}
             </a>
           ))}
         </div>

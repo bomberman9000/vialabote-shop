@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Sparkles } from "lucide-react";
+import { prisma } from "@/lib/prisma";
 import { RoutineFinderTrigger } from "@/components/routine-finder/routine-finder-trigger";
 
 // Production master assets (ML matting/u2net, alpha-канал, прозрачные
@@ -14,8 +15,14 @@ import { RoutineFinderTrigger } from "@/components/routine-finder/routine-finder
 // ratio — исходное соотношение сторон PNG (не деформируется).
 // baselineShift — сдвиг вниз на долю собственной высоты: под донышком в кадре
 // остаётся прозрачный запас, и без сдвига флаконы «висели» бы над линией.
+//
+// Это таблица ГЕОМЕТРИИ, ключом — slug товара. Значения замерены по каждому
+// конкретному снимку и из данных не выводятся, поэтому остаются в коде. А вот
+// видимость флакона данными управляется: ниже ряд фильтруется по актуальному
+// isActive, чтобы скрытый в админке/Telegram товар не продолжал стоять в hero.
 const HERO_BOTTLES = [
   {
+    slug: "serum-resveratrol-vitamin-c",
     image: "/images/products/masters/rastrovetrol-master.png",
     alt: "Сыворотка Ресвератрол + Витамин C",
     ratio: "425 / 1472",
@@ -24,6 +31,7 @@ const HERO_BOTTLES = [
     z: 2,
   },
   {
+    slug: "inci-retinal-serum",
     image: "/images/products/masters/retinal-master.png",
     alt: "INCI Retinal Serum",
     ratio: "417 / 1467",
@@ -32,6 +40,7 @@ const HERO_BOTTLES = [
     z: 3,
   },
   {
+    slug: "serum-8-in-1-white-tea",
     image: "/images/products/masters/8in1-master.png",
     alt: "Сыворотка 8 in 1 White Tea",
     ratio: "420 / 1472",
@@ -40,6 +49,7 @@ const HERO_BOTTLES = [
     z: 4,
   },
   {
+    slug: "hydrophilic-gel-oil",
     image: "/images/products/masters/gidrofil-master.png",
     alt: "Гидрофильное гель-масло",
     ratio: "495 / 1473",
@@ -48,6 +58,7 @@ const HERO_BOTTLES = [
     z: 3,
   },
   {
+    slug: "multi3-anti-acne-serum",
     image: "/images/products/masters/antiaa-master.png",
     alt: "Multi3 Anti-Acne Serum",
     ratio: "416 / 1221",
@@ -57,7 +68,17 @@ const HERO_BOTTLES = [
   },
 ];
 
-export function Hero() {
+export async function Hero() {
+  const activeSlugs = new Set(
+    (
+      await prisma.product.findMany({
+        where: { isActive: true, slug: { in: HERO_BOTTLES.map((b) => b.slug) } },
+        select: { slug: true },
+      })
+    ).map((p) => p.slug),
+  );
+  const bottles = HERO_BOTTLES.filter((b) => activeSlugs.has(b.slug));
+
   return (
     <section className="relative -mt-8 overflow-hidden bg-[#F7F1E6] md:-mx-[calc((100vw-100%)/2)] md:px-[calc((100vw-100%)/2)]">
       <div className="relative mx-auto flex min-h-0 max-w-7xl flex-col md:min-h-[600px] md:flex-row">
@@ -113,14 +134,17 @@ export function Hero() {
           <div className="absolute inset-0 bg-gradient-to-r from-[#F7F1E6] via-transparent to-transparent" />
         </div>
 
-        {/* ПРОДУКТЫ — крупный foreground перед моделью, стоят на общей поверхности */}
+        {/* ПРОДУКТЫ — крупный foreground перед моделью, стоят на общей поверхности.
+            Ряд целиком исчезает, если ни один из этих товаров не опубликован —
+            иначе осталась бы висеть «полка» с тенью без флаконов. */}
+        {bottles.length > 0 && (
         <div className="pointer-events-none relative z-10 -mt-12 flex h-[34vw] max-h-[260px] min-h-[140px] w-full items-end justify-center px-4 pb-4 md:absolute md:bottom-[9%] md:left-[41%] md:top-[40%] md:mt-0 md:h-auto md:max-h-none md:w-[38%] md:px-0 md:pb-0">
           {/* поверхность-«полка»: общая мягкая тень под рядом */}
           <div className="absolute bottom-[-2%] left-[2%] right-[2%] h-[10%] rounded-[100%] bg-gradient-to-b from-black/25 to-transparent blur-md" />
           <div className="flex h-full w-full items-end justify-center gap-[0.5%]">
-            {HERO_BOTTLES.map((bottle) => (
+            {bottles.map((bottle) => (
               <div
-                key={bottle.image}
+                key={bottle.slug}
                 className="relative flex-none"
                 style={{
                   height: bottle.heightPct,
@@ -140,6 +164,7 @@ export function Hero() {
             ))}
           </div>
         </div>
+        )}
       </div>
     </section>
   );

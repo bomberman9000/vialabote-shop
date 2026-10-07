@@ -3,10 +3,12 @@ import Link from "next/link";
 import { FlaskConical, Sprout, ShieldCheck, Factory, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { ProductCard, ProductGrid } from "@/components/product-card";
-import { ConcernCard } from "@/components/concern-card";
+import Image from "next/image";
+import { ConcernCard, ConcernGrid } from "@/components/concern-card";
+import { Reveal } from "@/components/reveal";
 import { toProductCardData } from "@/lib/product-card-data";
 import { Hero } from "@/components/hero";
-import { concernTitle } from "@/lib/concerns";
+import { concernTitle, CONCERN_VISUALS } from "@/lib/concerns";
 
 export const dynamic = "force-dynamic";
 
@@ -53,8 +55,9 @@ export default async function HomePage() {
     include: { discount: true },
   });
 
-  // Плитки потребностей строятся по БД: список — из Concern, картинка — из
-  // реального опубликованного товара этой потребности. Потребность без единого
+  // Плитки потребностей строятся по БД: список — из Concern. Картинка —
+  // абстрактная текстура потребности (CONCERN_VISUALS), а для потребности без
+  // неё — фото реального опубликованного товара. Потребность без единого
   // видимого товара плитку не получает, поэтому архивация SKU не оставляет
   // ссылку на пустой фильтр, а новый размеченный товар подхватывается сам.
   const concerns = await prisma.concern.findMany({ orderBy: { name: "asc" } });
@@ -66,9 +69,14 @@ export default async function HomePage() {
           orderBy: { createdAt: "desc" },
           select: { imageUrl: true },
         });
-        return product
-          ? { slug: concern.slug, title: concernTitle(concern), image: product.imageUrl }
-          : null;
+        if (!product) return null;
+        const visual = CONCERN_VISUALS[concern.slug];
+        return {
+          slug: concern.slug,
+          title: concernTitle(concern),
+          image: visual?.image ?? product.imageUrl,
+          tone: visual?.tone ?? ("dark" as const),
+        };
       }),
     )
   ).filter((tile): tile is NonNullable<typeof tile> => tile !== null);
@@ -96,11 +104,21 @@ export default async function HomePage() {
       </section>
 
       {/* BESTSELLERS — сразу после hero и trust-блока */}
-      <section>
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="font-display text-2xl text-brand-800">Бестселлеры</h2>
-          <Link href="/catalog" className="text-sm text-brand-600 hover:underline">
-            Весь каталог →
+      <Reveal>
+      <section aria-labelledby="bestsellers-title">
+        <div className="mb-8 flex items-end justify-between gap-4">
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">Коллекция</p>
+            <h2 id="bestsellers-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">
+              Бестселлеры
+            </h2>
+          </div>
+          <Link
+            href="/catalog"
+            className="group inline-flex min-h-11 items-center gap-1.5 text-xs font-bold uppercase tracking-[0.1em] text-brand-700 transition-colors hover:text-gold-500"
+          >
+            Весь каталог
+            <span aria-hidden="true" className="transition-transform duration-200 group-hover:translate-x-1">→</span>
           </Link>
         </div>
         {products.length === 0 ? (
@@ -116,41 +134,65 @@ export default async function HomePage() {
           </ProductGrid>
         )}
       </section>
+      </Reveal>
 
       {/* SHOP BY CONCERN — состав и картинки из БД, без фиктивной таксономии */}
       {concernTiles.length > 0 && (
-        <section id="concerns">
-          <h2 className="mb-6 font-display text-2xl text-brand-800">
-            Подберите уход по потребности
-          </h2>
-          <div className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-3 lg:grid-cols-5 max-md:[&>*:last-child:nth-child(odd)]:col-span-2 max-md:[&>*:last-child:nth-child(odd)]:aspect-[2/1]">
+        <Reveal>
+        <section id="concerns" aria-labelledby="concerns-title">
+          <div className="mb-8 flex flex-col gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">Задача кожи</p>
+            <h2 id="concerns-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">
+              Подберите уход по потребности
+            </h2>
+          </div>
+          <ConcernGrid>
             {concernTiles.map((concern) => (
               <ConcernCard key={concern.slug} concern={concern} />
             ))}
-          </div>
+          </ConcernGrid>
         </section>
+        </Reveal>
       )}
 
       {/* BRAND STORY */}
-      <section id="about" className="card-dark grid gap-8 p-8 md:grid-cols-2 md:p-14">
-        <div className="flex flex-col justify-center gap-3">
-          <p className="text-xs uppercase tracking-[0.25em] text-gold-300">О бренде</p>
-          <h2 className="font-display text-3xl">Наука. Природа. Гармония.</h2>
-          <p className="max-w-md text-brand-200">
+      <Reveal>
+      <section
+        id="about"
+        aria-labelledby="about-title"
+        className="card-dark grid scroll-mt-28 overflow-hidden md:grid-cols-[1.15fr_0.85fr]"
+      >
+        <div className="flex flex-col justify-center gap-5 p-8 sm:p-10 md:p-14">
+          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gold-300">О бренде</p>
+          <h2 id="about-title" className="text-[2rem] leading-[1.1] sm:text-[2.5rem]">
+            Наука. Природа. Гармония.
+          </h2>
+          <p className="max-w-[46ch] text-[15px] leading-relaxed text-brand-200 sm:text-base">
             Via Labote — лаборатория персональной косметики, где каждая формула создаётся как
             точный ответ коже. Здесь продукция бренда доступна напрямую — только оригинальные
             средства, — а уход можно подобрать под задачи именно вашей кожи.
           </p>
+          <ul className="mt-2 grid gap-3 border-t border-brand-700 pt-6 sm:grid-cols-2">
+            {TRUST_BADGES.map((badge) => (
+              <li key={badge.label} className="flex items-center gap-3 text-brand-100">
+                <badge.icon size={18} strokeWidth={1.6} className="shrink-0 text-gold-300" aria-hidden="true" />
+                <span className="text-sm">{badge.label.replace("\n", " ")}</span>
+              </li>
+            ))}
+          </ul>
         </div>
-        <div className="flex flex-col justify-center gap-4 border-t border-brand-700 pt-6 md:border-l md:border-t-0 md:pl-10 md:pt-0">
-          {TRUST_BADGES.map((badge) => (
-            <div key={badge.label} className="flex items-center gap-3 text-brand-100">
-              <badge.icon size={20} strokeWidth={1.6} className="shrink-0 text-gold-300" aria-hidden="true" />
-              <span className="text-sm">{badge.label.replace("\n", " ")}</span>
-            </div>
-          ))}
+        {/* Редакционный снимок реального продукта бренда (assets/product-media/editorial) */}
+        <div className="relative min-h-[280px] md:min-h-full">
+          <Image
+            src="/images/editorial/brand-story.webp"
+            alt="Гидрофильное гель-масло VIA LABOTE"
+            fill
+            className="object-cover"
+            sizes="(min-width: 768px) 40vw, 100vw"
+          />
         </div>
       </section>
+      </Reveal>
     </div>
   );
 }

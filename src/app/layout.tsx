@@ -8,6 +8,7 @@ import { AuthProvider } from "@/components/auth-provider";
 import { RoutineFinderProvider } from "@/components/routine-finder/routine-finder-context";
 import { RoutineFinderWidget } from "@/components/routine-finder/routine-finder-widget";
 import { getRoutineProducts } from "@/lib/get-routine-products";
+import { getSearchProducts } from "@/lib/get-search-products";
 
 export const metadata: Metadata = {
   title: "Vialabote — интернет-магазин косметики",
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const routineProducts = await getRoutineProducts();
+  const [routineProducts, searchProducts] = await Promise.all([getRoutineProducts(), getSearchProducts()]);
 
   return (
     <html lang="ru">
@@ -29,7 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 не вызывает useSearchParams, поэтому граница не нужна. */}
             <RoutineFinderProvider products={routineProducts}>
               <TopBar />
-              <Header />
+              <Header searchProducts={searchProducts} />
               <main className="mx-auto min-h-[70vh] max-w-7xl px-4 py-8">{children}</main>
               <Footer />
               <RoutineFinderWidget />

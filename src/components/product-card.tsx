@@ -15,9 +15,10 @@ export type { ProductCardData };
 // карточка не знает ни одного конкретного SKU, поэтому товар, созданный в
 // админке или через Telegram, отображается так же.
 //
-// Фото: единая область 3:4 на молочном фоне, object-contain — снимок никогда
-// не обрезается и не растягивается; совпадающие по пропорции снимки
-// заполняют её целиком, остальные встают по центру с полями.
+// Фото: единая «сцена» 3:4 (.vl-stage, globals.css) — packshot на белом
+// умножается на тёплый тон сцены, поэтому все товары выглядят как одна
+// фотосессия. object-contain: снимок не обрезается и не растягивается;
+// снимок другой пропорции (загрузка из админки/Telegram) встанет по центру.
 // Вся карточка ведёт на товар (растянутая ссылка заголовка), кнопка корзины
 // лежит поверх неё отдельным слоем.
 export function ProductCard({ product }: { product: ProductCardData }) {
@@ -40,12 +41,12 @@ export function ProductCard({ product }: { product: ProductCardData }) {
 
   return (
     <article className="group relative flex h-full flex-col">
-      <div className="relative aspect-[3/4] overflow-hidden rounded-2xl bg-[#F1EADF] transition-shadow duration-300 group-hover:shadow-[0_18px_40px_-24px_rgba(16,21,44,0.45)]">
+      <div className="vl-stage relative aspect-[3/4] overflow-hidden rounded-2xl transition-[box-shadow,transform] duration-300 ease-out group-hover:-translate-y-0.5 group-hover:shadow-[0_22px_44px_-30px_rgba(16,21,44,0.55)]">
         <Image
           src={product.imageUrl}
           alt=""
           fill
-          className="object-contain transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+          className="object-contain transition-transform duration-500 ease-out group-hover:scale-[1.025]"
           sizes="(min-width: 1280px) 300px, (min-width: 768px) 33vw, 50vw"
         />
         {product.badge ? (
@@ -83,7 +84,7 @@ export function ProductCard({ product }: { product: ProductCardData }) {
             onClick={handleAdd}
             disabled={!inStock}
             aria-label={inStock ? `Добавить «${product.title}» в корзину` : `«${product.title}» нет в наличии`}
-            className="relative z-10 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-brand-900 px-4 text-xs font-bold uppercase tracking-[0.08em] text-brand-900 transition-colors hover:bg-brand-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAF6EE] disabled:cursor-not-allowed disabled:border-brand-200 disabled:text-brand-400 disabled:hover:bg-transparent"
+            className="relative z-10 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-brand-900/80 px-4 text-xs font-bold uppercase tracking-[0.08em] text-brand-900 transition-colors duration-200 group-hover:border-brand-900 group-hover:bg-white hover:!bg-brand-900 hover:!text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#FAF6EE] disabled:cursor-not-allowed disabled:border-brand-200 disabled:text-brand-400 disabled:hover:bg-transparent"
           >
             {!inStock ? (
               "Нет в наличии"

@@ -82,44 +82,44 @@ export default async function CatalogPage({
     });
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="font-display text-2xl text-brand-800">
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-2 pt-2">
+        <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">
+          {concern ? "Задача кожи" : "VIA LABOTE"}
+        </p>
+        <h1 className="text-[2rem] leading-tight text-brand-900 sm:text-[2.5rem]">
           {concern ? concernTitle(concern) : "Каталог"}
         </h1>
-        <p className="mt-1 text-sm text-brand-500">
-          Найдено {products.length} {products.length === 1 ? "товар" : "товара"}
+        <p className="text-sm text-brand-500">
+          {products.length} {pluralProducts(products.length)}
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-2">
-          <a
-            href={buildHref({ sort: searchParams.sort })}
-            className={`btn-outline ${!searchParams.category && !concern ? "bg-brand-100" : ""}`}
-          >
+      <div className="flex flex-col gap-4 border-y border-brand-100 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <nav aria-label="Фильтры каталога" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0 lg:pb-0">
+          <FilterChip href={buildHref({ sort: searchParams.sort })} active={!searchParams.category && !concern}>
             Все товары
-          </a>
+          </FilterChip>
           {categories.map((c) => (
-            <a
+            <FilterChip
               key={c.id}
               href={buildHref({ category: c.slug, sort: searchParams.sort })}
-              className={`btn-outline ${searchParams.category === c.slug ? "bg-brand-100" : ""}`}
+              active={searchParams.category === c.slug}
             >
               {c.name}
-            </a>
+            </FilterChip>
           ))}
-          <span className="mx-1 w-px self-stretch bg-brand-200" aria-hidden="true" />
+          <span className="mx-1 w-px shrink-0 self-stretch bg-brand-200" aria-hidden="true" />
           {concerns.map((c) => (
-            <a
+            <FilterChip
               key={c.id}
               href={buildHref({ concern: c.slug, sort: searchParams.sort })}
-              className={`btn-outline text-xs ${searchParams.concern === c.slug ? "bg-brand-100" : ""}`}
+              active={searchParams.concern === c.slug}
             >
               {concernTitle(c)}
-            </a>
+            </FilterChip>
           ))}
-        </div>
+        </nav>
 
         <SortSelect current={sort.value} />
       </div>
@@ -148,4 +148,28 @@ export default async function CatalogPage({
       )}
     </div>
   );
+}
+
+function FilterChip({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={`inline-flex min-h-10 shrink-0 items-center whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold transition-colors duration-200 ${
+        active
+          ? "border-brand-900 bg-brand-900 text-white"
+          : "border-brand-200 text-brand-700 hover:border-brand-400 hover:text-brand-900"
+      }`}
+    >
+      {children}
+    </a>
+  );
+}
+
+// 1 товар, 2–4 товара, 5+ товаров (11–14 — «товаров»)
+function pluralProducts(n: number): string {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "товар";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "товара";
+  return "товаров";
 }

@@ -51,3 +51,80 @@ h3 {
 .card-dark {
   @apply rounded-2xl bg-brand-900 text-brand-50 shadow-sm;
 }
+
+/* ---------------------------------------------------------------------------
+   VIA LABOTE design tokens (canonical list: Obsidian VIALABOTE-DESIGN-PLAN.md)
+   ------------------------------------------------------------------------- */
+:root {
+  --vl-ivory: #faf6ee; /* page */
+  --vl-stage: #f1eadf; /* product image stage */
+  --vl-cream: #f7f1e6; /* hero / soft sections */
+  --vl-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --vl-dur-fast: 180ms;
+  --vl-dur: 320ms;
+  --vl-dur-reveal: 640ms;
+}
+
+/* Product stage: packshots are shot on white — multiply turns that white into
+   the warm stage tone, so every card reads as one photoshoot. Real label colours
+   are kept (multiply with a near-white tone shifts them by only ~5%). */
+.vl-stage {
+  background: var(--vl-stage);
+  isolation: isolate;
+}
+.vl-stage img {
+  mix-blend-mode: multiply;
+}
+
+/* Scroll reveal: content is visible by default (SSR / no JS). The <Reveal>
+   component only hides elements that are still below the fold after mount,
+   then fades them in — nothing above the fold ever starts hidden (no LCP/CLS
+   cost). */
+[data-reveal="pending"] {
+  opacity: 0;
+  transform: translateY(16px);
+}
+[data-reveal="shown"] {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--vl-dur-reveal) var(--vl-ease),
+    transform var(--vl-dur-reveal) var(--vl-ease);
+}
+
+/* Dialog entrances (sheet / drawer / search) */
+@keyframes vl-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes vl-slide-in-left {
+  from { opacity: 0.6; transform: translateX(-24px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes vl-fade-down {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes vl-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.vl-dialog[open]::backdrop { animation: vl-backdrop-in var(--vl-dur) var(--vl-ease); }
+.vl-dialog-sheet { animation: vl-fade-up var(--vl-dur) var(--vl-ease); }
+.vl-dialog-drawer { animation: vl-slide-in-left var(--vl-dur) var(--vl-ease); }
+.vl-dialog-search { animation: vl-fade-down var(--vl-dur) var(--vl-ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  [data-reveal="pending"] {
+    opacity: 1;
+    transform: none;
+  }
+}

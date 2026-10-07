@@ -363,22 +363,28 @@ async function main() {
     }
   }
 
-  const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@vialabote.ru";
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD || "admin12345";
-  const passwordHash = await bcrypt.hash(adminPassword, 10);
-
-  await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: {},
-    create: {
-      email: adminEmail,
-      name: "Администратор",
-      passwordHash,
-      role: "ADMIN",
-    },
-  });
-
-  console.log(`Готово. Админ: ${adminEmail} / ${adminPassword}`);
+  // Админ создаётся ТОЛЬКО если заданы оба SEED_ADMIN_EMAIL и
+  // SEED_ADMIN_PASSWORD: никаких учёток по умолчанию (раньше был
+  // admin@vialabote.ru / admin12345 — недопустимо для продакшен-БД). Пароль
+  // никогда не печатается.
+  const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim();
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  if (adminEmail && adminPassword) {
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
+    await prisma.user.upsert({
+      where: { email: adminEmail },
+      update: {},
+      create: {
+        email: adminEmail,
+        name: "Администратор",
+        passwordHash,
+        role: "ADMIN",
+      },
+    });
+    console.log(`Готово. Каталог засеян; админ: ${adminEmail} (пароль не выводится).`);
+  } else {
+    console.log("Готово. Каталог засеян; админ не создан (SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD не заданы).");
+  }
 }
 
 main()

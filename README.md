@@ -23,8 +23,8 @@ npm run dev
 Сайт будет доступен на http://localhost:3000.
 
 После сидирования данные для входа в админ-панель:
-- Email: `admin@vialabote.ru` (или значение `SEED_ADMIN_EMAIL` из `.env`)
-- Пароль: `admin12345` (или значение `SEED_ADMIN_PASSWORD`)
+- Email и пароль — значения `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` из `.env`
+  (если хотя бы одно не задано, сид админа не создаёт; пароль не печатается)
 
 Админ-панель: `/admin/products` (управление товарами) и `/admin/orders`
 (список заказов).

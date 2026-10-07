@@ -56,16 +56,23 @@ npm run dev
 4. Если переменные не заданы — сайт всё равно принимает заказы, но без
    онлайн-оплаты (статус «оплата при получении»), это удобно для разработки.
 
-## Продакшен: база данных
+## База данных: PostgreSQL
 
-Локально используется SQLite. Для продакшена рекомендуется Postgres:
+Магазин, Web Admin и Telegram-админка работают с одной базой PostgreSQL
+(`DATABASE_URL`). Локально удобнее всего поднять контейнер:
 
-1. В `prisma/schema.prisma` смените `provider = "sqlite"` на
-   `provider = "postgresql"`.
-2. Задайте `DATABASE_URL` в переменных окружения хостинга, например:
-   `postgresql://user:password@host:5432/vialabote`.
-3. Выполните `npx prisma db push` (или настройте миграции через
-   `npx prisma migrate deploy`).
+```bash
+docker run -d --name vialabote-pg -e POSTGRES_USER=vialabote -e POSTGRES_PASSWORD=password \
+  -e POSTGRES_DB=vialabote -p 127.0.0.1:5432:5432 postgres:16-alpine
+npx prisma migrate deploy   # схема (baseline 20261007000000_postgres_baseline)
+npm run db:seed             # каталог (13 SKU) + админ из SEED_ADMIN_EMAIL/PASSWORD
+npx tsx scripts/db/verify-catalog.ts   # сверка каталога с prisma/catalog-snapshot.json
+```
+
+Продакшен — управляемый PostgreSQL в РФ; те же три команды против его
+`DATABASE_URL`. До 2026-10-07 проект работал на SQLite: старые миграции
+остались в истории git, `prisma/catalog-snapshot.json` — снимок каталога
+из последней SQLite-базы, по которому проверяется перенос.
 
 ## Деплой
 

@@ -11,8 +11,9 @@
 #   - tests exactly <SHA> (fresh detached worktree from a bare mirror; never a
 #     copied working directory);
 #   - dependencies strictly from package-lock.json (`npm ci`, no upgrades);
-#   - isolated SQLite DB built from migrations + seed inside the run dir;
-#     CI-only secrets; no production DB/secrets;
+#   - isolated throwaway Postgres 16 per run (own docker container, random
+#     localhost port, removed on exit) built from migrations + seed;
+#     CI-only secrets; no production DB/secrets; other containers untouched;
 #   - everything lives under ~/ci/vialabote-shop/ (touches no other project).
 set -uo pipefail
 
@@ -38,13 +39,23 @@ mkdir -p "$LOGS"
 TESTED_SHA=$(git rev-parse HEAD)
 
 export CI=1 NEXT_TELEMETRY_DISABLED=1
-export DATABASE_URL="file:$RUN/.ci-db/ci.db"
+
+# Throwaway Postgres for this run only.
+PG_NAME="vialabote-ci-${SHA:0:12}-$(date +%s)"
+cleanup_pg() { docker rm -f "$PG_NAME" >/dev/null 2>&1 || true; }
+trap cleanup_pg EXIT
+if ! docker run -d --name "$PG_NAME" -e POSTGRES_USER=ci -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=vialabote_ci \
+     -p 127.0.0.1::5432 postgres:16-alpine >/dev/null; then
+  echo "ZEROHOUR_CI=BLOCKED"; echo "TESTED_SHA=$TESTED_SHA"; echo "FAILURES=postgres container failed to start"; exit 2
+fi
+for _ in $(seq 1 60); do docker exec "$PG_NAME" pg_isready -U ci -d vialabote_ci >/dev/null 2>&1 && break; sleep 1; done
+PG_PORT=$(docker port "$PG_NAME" 5432/tcp | head -1 | sed 's/.*://')
+export DATABASE_URL="postgresql://ci:ci@127.0.0.1:${PG_PORT}/vialabote_ci?schema=public"
 export NEXTAUTH_SECRET="zerohour-ci-only-not-a-secret"
 export NEXTAUTH_URL="http://localhost:3000"
 export NEXT_PUBLIC_APP_URL="http://localhost:3000"
 export SEED_ADMIN_EMAIL="ci-admin@ci.invalid"
 export SEED_ADMIN_PASSWORD="ci-only-$(date +%s)"
-mkdir -p "$RUN/.ci-db"
 
 step() { # name, command...
   local name="$1"; shift
@@ -58,6 +69,7 @@ step() { # name, command...
 
 echo "== vialabote-shop CI on $(hostname) | node $(node -v) npm $(npm -v)"
 echo "== run dir: $RUN"
+echo "== database: postgres:16-alpine container $PG_NAME (127.0.0.1:$PG_PORT)"
 FAILS=()
 INSTALL=FAIL; TYPECHECK=SKIPPED; TESTS=SKIPPED; BUILD=SKIPPED; LINT=NOT_CONFIGURED
 
@@ -65,6 +77,7 @@ if step install npm ci --no-audit --no-fund; then
   INSTALL=PASS
   step db-migrate npx prisma migrate deploy || FAILS+=("db-migrate")
   step db-seed npm run --silent db:seed || FAILS+=("db-seed")
+  step catalog-parity npx tsx scripts/db/verify-catalog.ts || FAILS+=("catalog-parity")
   step typecheck npx tsc --noEmit --incremental false && TYPECHECK=PASS || { TYPECHECK=FAIL; FAILS+=("typecheck"); }
   step tests npx vitest run && TESTS=PASS || { TESTS=FAIL; FAILS+=("tests"); }
   step build npx next build && BUILD=PASS || { BUILD=FAIL; FAILS+=("build"); }
@@ -89,6 +102,7 @@ echo "TESTED_SHA=$TESTED_SHA"
 echo "INSTALL=$INSTALL (npm ci, lockfile)"
 echo "TYPECHECK=$TYPECHECK"
 echo "TESTS=$TESTS${TESTS_SUMMARY:+ — $TESTS_SUMMARY}"
+echo "CATALOG_PARITY=$(grep -h "CATALOG_PARITY=" "$LOGS/catalog-parity.log" 2>/dev/null | sed 's/CATALOG_PARITY=//' || echo SKIPPED)"
 echo "BUILD=$BUILD"
 echo "LINT=$LINT"
 echo "DURATION=$(( $(date +%s) - START ))s"

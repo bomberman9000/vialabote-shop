@@ -22,13 +22,15 @@ export function isTelegramConfigured(): boolean {
   );
 }
 
-// Kill switch для мутаций каталога через Telegram (цена, скидка, publish,
-// archive). По умолчанию ВЫКЛЮЧЕНО: бот отвечает на read-only команды, но
-// не создаёт confirmation и не исполняет уже созданные. Включается только
-// явным TELEGRAM_CMS_MUTATIONS=enabled после отдельной проверки (owner
-// decision 2026-10-09). Web Admin этим флагом не затрагивается.
+// Мутации каталога через Telegram (цена, скидка, publish, archive) ЗАПРЕЩЕНЫ.
+// Telegram CMS V2 — строго read-only панель (owner decision 2026-10-09):
+// бот не создаёт confirmation и не исполняет уже созданные. Переменная
+// TELEGRAM_CMS_MUTATIONS больше НЕ включает мутации — вернуть их можно только
+// изменением кода и отдельным релизом. Web Admin этим не затрагивается.
+// Код мутаций в dispatch-command.ts сохранён и покрыт тестами (через мок
+// этой функции), чтобы будущее включение не было "непроверенным".
 export function isTelegramMutationsEnabled(): boolean {
-  return process.env.TELEGRAM_CMS_MUTATIONS?.trim() === "enabled";
+  return false;
 }
 
 export const TELEGRAM_MUTATIONS_DISABLED_MESSAGE =

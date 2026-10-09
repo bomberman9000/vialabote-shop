@@ -221,11 +221,14 @@ describe("telegram-poller — end to end through the real webhook route and comm
     expect(String(calls[1].body.text)).toContain("не привязан");
   });
 
-  it("catalog mutations stay off: no confirmation is created", async () => {
+  it.each([undefined, "enabled"])("catalog mutations stay off (TELEGRAM_CMS_MUTATIONS=%s): no confirmation is created", async (flag) => {
+    if (flag === undefined) delete process.env.TELEGRAM_CMS_MUTATIONS;
+    else process.env.TELEGRAM_CMS_MUTATIONS = flag;
     const { impl, calls } = viaRoute();
     await handleUpdate(cfg, msgUpdate(3, Number(ADMIN_TG), "цена Multi3 1"), { fetchImpl: impl });
     expect(String(calls[1].body.text)).toContain("отключены");
     expect(await prisma.pendingConfirmation.count({ where: { actorTelegramUserId: ADMIN_TG } })).toBe(0);
+    delete process.env.TELEGRAM_CMS_MUTATIONS;
   });
 
   it("a wrong secret never reaches the command layer (403, nothing sent)", async () => {

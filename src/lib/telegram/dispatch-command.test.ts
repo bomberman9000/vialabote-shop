@@ -6,6 +6,13 @@ import { prepareCommand, executeConfirmation, declineConfirmation } from "./disp
 // напрямую (getServerSession читает next/headers — недоступно вне реального
 // Next.js request-scope).
 vi.mock("next-auth", () => ({ getServerSession: vi.fn().mockResolvedValue(null) }));
+// В продукте мутации через Telegram жёстко выключены (config.ts всегда false).
+// Здесь проверяется сам код мутаций на случай будущего включения в коде:
+// мок делает выключатель управляемым через env только в этом файле.
+vi.mock("./config", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./config")>()),
+  isTelegramMutationsEnabled: () => process.env.TELEGRAM_CMS_MUTATIONS?.trim() === "enabled",
+}));
 const { POST: postOrder } = await import("@/app/api/orders/route");
 
 const suffix = Date.now();

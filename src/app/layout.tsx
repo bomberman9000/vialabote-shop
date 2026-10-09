@@ -13,6 +13,16 @@ import { getSearchProducts } from "@/lib/get-search-products";
 export const metadata: Metadata = {
   title: "Vialabote — интернет-магазин косметики",
   description: "Собственный интернет-магазин Vialabote: уход и косметика с доставкой по России.",
+  // Знак VIA LABOTE (public/branding/vialabote-favicon.png) -> scripts/media/favicons.mjs.
+  // Только эти ссылки: стандартного favicon Next (app/favicon.ico) в проекте нет.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+      { url: "/icons/icon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

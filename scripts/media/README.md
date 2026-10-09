@@ -22,4 +22,10 @@ node scripts/media/hero-crop.mjs assets/product-media/editorial/vialabote-hero-b
 #    python3 -P scripts/media/tonic-cutout.py assets/product-media/original/toner-serum-ph55-original.jpeg assets/product-media/enhanced/toner-serum-ph55.webp /tmp/ph55-overlay.png 622,819,75,208,14 624,817,812,18 782,80,92
 ```
 
+```bash
+# 5. site icons from the owner-approved badge -> public/favicon.ico + public/icons/*
+#    (16/32/48 ICO, 32 and 512 px transparent PNG, 180 px apple-touch-icon on white)
+node scripts/media/favicons.mjs public/branding/vialabote-favicon.png public
+```
+
 See `assets/product-media/PRODUCT-MEDIA-MANIFEST.md` for what each step does and the per-SKU results.

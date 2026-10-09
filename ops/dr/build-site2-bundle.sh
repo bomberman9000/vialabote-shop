@@ -46,8 +46,24 @@ cd "$RUN"
 npm ci --no-audit --no-fund > .ci-npm.log 2>&1 || { tail -20 .ci-npm.log; die "npm ci failed"; }
 # explicit: npm may skip dependency install scripts (prisma's postinstall generate)
 npx prisma generate > .ci-prisma.log 2>&1 || { tail -20 .ci-prisma.log; die "prisma generate failed"; }
+
+# The root layout reads the catalog (search index, routine) and Next prerenders the static
+# pages (/cart, /checkout, /account/*) with it, so the build needs a database. Throwaway
+# Postgres with the repo catalog (prisma/seed.ts, 13 SKU, checked by verify-catalog) — the
+# same catalog the ZeroHour PRIMARY was seeded with. No admin, no production data.
+PG=vialabote-shop-build-$S7-$$
+docker run -d --rm --name "$PG" -e POSTGRES_USER=build -e POSTGRES_PASSWORD=build -e POSTGRES_DB=build \
+  -p 127.0.0.1::5432 postgres:16-alpine > /dev/null
+trap 'docker rm -f "$PG" >/dev/null 2>&1 || true' EXIT
+for _ in $(seq 1 30); do docker exec "$PG" pg_isready -U build -d build > /dev/null 2>&1 && break; sleep 1; done
+PG_ADDR=$(docker port "$PG" 5432/tcp | head -1)
+export DATABASE_URL="postgresql://build:build@$PG_ADDR/build?schema=public"
+{ npx prisma migrate deploy && SEED_ADMIN_EMAIL='' SEED_ADMIN_PASSWORD='' npm run -s db:seed && npx tsx scripts/db/verify-catalog.ts; } \
+  > .ci-db.log 2>&1 || { tail -20 .ci-db.log; die "build database setup failed"; }
+tail -1 .ci-db.log
 npx next build > .ci-build.log 2>&1 || { tail -30 .ci-build.log; die "next build failed"; }
 tail -4 .ci-build.log
+unset DATABASE_URL
 echo "$SHA" > .release-commit
 
 tar -C "$RUN" --exclude=.git --exclude=.node --exclude='.ci-*' --exclude=.next/cache --exclude=node_modules/.cache \

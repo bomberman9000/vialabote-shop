@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { isTelegramConfigured, getTelegramWebhookSecret } from "@/lib/telegram/config";
 import { prepareCommand, executeConfirmation, declineConfirmation } from "@/lib/telegram/dispatch-command";
+import { isTelegramAdmin } from "@/lib/telegram/actor-resolver";
+import { helpText, isMenuCommand, menuScreen, parseCallback, renderScreen, cb } from "@/lib/telegram/panel";
 
 // Config-gated: без TELEGRAM_BOT_TOKEN этот route существует, но ничего не
 // делает — 404 на любой запрос, без обращения к БД/парсеру/командам. Так
@@ -18,8 +20,15 @@ interface TelegramUser {
   id: number;
 }
 
+// chat.type: "private" | "group" | "supergroup" | "channel". Панель работает
+// только в личном чате: в группе бот молчит (не раскрывает данные участникам).
+interface TelegramChat {
+  id: number;
+  type?: string;
+}
+
 interface TelegramMessage {
-  chat: { id: number };
+  chat: TelegramChat;
   from?: TelegramUser;
   text?: string;
 }
@@ -27,7 +36,7 @@ interface TelegramMessage {
 interface TelegramCallbackQuery {
   id: string;
   from: TelegramUser;
-  message?: { chat: { id: number }; message_id: number };
+  message?: { chat: TelegramChat; message_id: number };
   data?: string;
 }
 
@@ -79,9 +88,33 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
+const UNLINKED_TEXT = "Этот Telegram-аккаунт не привязан к администратору Vialabote.";
+
+function isPrivate(chat: TelegramChat | undefined): boolean {
+  return !chat?.type || chat.type === "private";
+}
+
 async function handleMessage(message: TelegramMessage) {
   const telegramUserId = String(message.from!.id);
   const chatId = message.chat.id;
+
+  if (!isPrivate(message.chat)) {
+    return NextResponse.json({ ok: true });
+  }
+
+  const menu = isMenuCommand(message.text!);
+  if (menu) {
+    if (!(await isTelegramAdmin(telegramUserId))) {
+      return NextResponse.json({ method: "sendMessage", chat_id: chatId, text: UNLINKED_TEXT });
+    }
+    const screen = menuScreen();
+    return NextResponse.json({
+      method: "sendMessage",
+      chat_id: chatId,
+      text: menu === "help" ? helpText() : screen.text,
+      reply_markup: menu === "help" ? { inline_keyboard: [[{ text: "📋 Меню", callback_data: cb("menu") }]] } : { inline_keyboard: screen.keyboard },
+    });
+  }
 
   const result = await prepareCommand(telegramUserId, message.text!.trim());
 
@@ -90,7 +123,7 @@ async function handleMessage(message: TelegramMessage) {
       return NextResponse.json({
         method: "sendMessage",
         chat_id: chatId,
-        text: "Этот Telegram-аккаунт не привязан к администратору Vialabote.",
+        text: UNLINKED_TEXT,
       });
     case "unknown_command":
       return NextResponse.json({
@@ -130,11 +163,34 @@ async function handleMessage(message: TelegramMessage) {
   }
 }
 
-async function handleCallbackQuery(cb: TelegramCallbackQuery) {
-  const telegramUserId = String(cb.from.id);
-  const chatId = cb.message?.chat.id;
-  const messageId = cb.message?.message_id;
-  const data = cb.data ?? "";
+async function handleCallbackQuery(query: TelegramCallbackQuery) {
+  const telegramUserId = String(query.from.id);
+  const chatId = query.message?.chat.id;
+  const messageId = query.message?.message_id;
+  const data = query.data ?? "";
+
+  if (!isPrivate(query.message?.chat)) {
+    return NextResponse.json({ method: "answerCallbackQuery", callback_query_id: query.id });
+  }
+
+  // Telegram CMS V2 panel: read-only screens, ADMIN by Telegram user id only.
+  if (data.startsWith("v2:")) {
+    if (!(await isTelegramAdmin(telegramUserId))) {
+      return NextResponse.json({ method: "answerCallbackQuery", callback_query_id: query.id, text: "Нет доступа", show_alert: true });
+    }
+    const target = parseCallback(data);
+    if (!target || chatId === undefined || messageId === undefined) {
+      return NextResponse.json({ method: "answerCallbackQuery", callback_query_id: query.id, text: "Кнопка устарела — откройте /menu" });
+    }
+    const screen = await renderScreen(target.screen, target.page);
+    return NextResponse.json({
+      method: "editMessageText",
+      chat_id: chatId,
+      message_id: messageId,
+      text: screen.text,
+      reply_markup: { inline_keyboard: screen.keyboard },
+    });
+  }
 
   const [action, confirmationId] = data.split(":");
   if (!confirmationId || (action !== "confirm" && action !== "cancel")) {

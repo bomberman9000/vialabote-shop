@@ -17,3 +17,9 @@ export async function resolveTelegramActor(telegramUserId: string): Promise<Reso
 export function toAdminActor(resolved: ResolvedTelegramActor): AdminActor {
   return { userId: resolved.userId, source: "TELEGRAM" };
 }
+
+/** ADMIN by immutable numeric Telegram user id — the only gate of the Telegram panel. */
+export async function isTelegramAdmin(telegramUserId: string): Promise<boolean> {
+  const actor = await resolveTelegramActor(telegramUserId);
+  return actor?.role === "ADMIN";
+}

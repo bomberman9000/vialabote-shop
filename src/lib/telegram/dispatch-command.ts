@@ -8,6 +8,7 @@ import { resolveProductByQuery, type ProductCandidate } from "./entity-resolver"
 import { resolveTelegramActor, toAdminActor } from "./actor-resolver";
 import { createPendingConfirmation, consumeConfirmation, cancelConfirmation } from "./confirmation-service";
 import { isTelegramMutationsEnabled, TELEGRAM_MUTATIONS_DISABLED_MESSAGE } from "./config";
+import { inciMissingText } from "./panel";
 import { setPrice, setDiscount, publishProduct, archiveProduct } from "@/lib/admin/commands/product";
 import { effectivePrice } from "@/lib/pricing/effective-price";
 import { formatPrice } from "@/lib/money";
@@ -139,17 +140,9 @@ export async function prepareCommand(actorTelegramUserId: string, rawText: strin
 
   if (intent.type === "LIST_PRODUCTS_MISSING_INCI") {
     // Read-only — не мутирует, confirmation не нужна. "INCI" сопоставлен с
-    // единственным существующим полем состава — activeIngredients.
-    const products = await prisma.product.findMany({
-      where: { activeIngredients: null, status: { not: "archived" } },
-      select: { title: true, slug: true },
-      orderBy: { title: "asc" },
-    });
-    const text =
-      products.length === 0
-        ? "Все активные товары содержат состав (INCI)."
-        : `Товары без состава (INCI):\n${products.map((p) => `• ${p.title} (${p.slug})`).join("\n")}`;
-    return { kind: "immediate_result", text };
+    // единственным существующим полем состава — activeIngredients (тот же
+    // запрос, что и экран «Составы INCI» панели).
+    return { kind: "immediate_result", text: await inciMissingText() };
   }
 
   if (intent.type === "CREATE_BANNER") {

@@ -45,7 +45,8 @@ export const SEEN_LIMIT = 1000;
 export const IDEMPOTENT_METHODS = new Set(["getUpdates", "getMe", "getWebhookInfo", "editMessageText", "editMessageReplyMarkup", "answerCallbackQuery"]);
 /** undici/Node codes raised before the request could reach Telegram (TLS handshake included). */
 const CONNECT_PHASE_CODES = new Set(["UND_ERR_CONNECT_TIMEOUT", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH"]);
-const UNLINKED_PREFIX = "Этот Telegram-аккаунт не привязан";
+// App replies that mean "this Telegram id is not an ADMIN" (message and panel button) — for the auth= log field.
+const DENIED_PREFIXES = ["Этот Telegram-аккаунт не привязан", "Нет доступа"];
 
 /** @param {Record<string, string | undefined>} [env] */
 export function loadConfig(env = process.env) {
@@ -168,7 +169,7 @@ export async function handleUpdate(cfg, update, { fetchImpl = fetch, log } = {})
   const kind = update.message ? "message" : update.callback_query ? "callback_query" : "other";
   /** @type {{ update_id: number, kind: string, from: number | null, app: number, method: string | null, sent: boolean | null, auth: string | null, error?: string }} */
   const summary = { update_id: update.update_id, kind, from, app: res.status, method: reply.method ?? null, sent: null, auth: null };
-  if (typeof reply.text === "string") summary.auth = reply.text.startsWith(UNLINKED_PREFIX) ? "denied" : "ok";
+  if (typeof reply.text === "string") summary.auth = DENIED_PREFIXES.some((p) => reply.text.startsWith(p)) ? "denied" : "ok";
   if (reply.method) {
     const { method, ...params } = reply;
     try {

@@ -113,10 +113,11 @@ describe("callbacks", () => {
     expect(s.sent).toBe(true);
   });
 
-  it("no second answerCallbackQuery when the app already answered (access denied alert)", async () => {
+  it("no second answerCallbackQuery when the app already answered (access denied alert), logged as denied", async () => {
     const { impl, calls } = fake({ method: "answerCallbackQuery", callback_query_id: "cq9", text: "Нет доступа", show_alert: true });
-    await handleUpdate(cfg, press, { fetchImpl: impl });
+    const s = await handleUpdate(cfg, press, { fetchImpl: impl });
     expect(calls.map((c) => c.method)).toEqual(["answerCallbackQuery"]);
+    expect(s.auth).toBe("denied");
   });
 
   it("'message is not modified' (same screen pressed twice) counts as delivered", async () => {

@@ -40,6 +40,8 @@ NEXTAUTH_SECRET=$SECRET
 NEXTAUTH_URL=http://127.0.0.1:3002
 NEXT_PUBLIC_APP_URL=http://127.0.0.1:3002
 EOF
+# Keep the Telegram CMS settings written by vm-telegram-activate.sh.
+[ -f $APP_ENV ] && grep -E '^(TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET|TELEGRAM_CMS_MUTATIONS)=' $APP_ENV >> $APP_ENV.tmp || true
 chown root:root $APP_ENV.tmp; chmod 600 $APP_ENV.tmp; mv $APP_ENV.tmp $APP_ENV; unset SECRET APP_URL OWN_URL
 umask 022; echo "ok ($APP_ENV 0600, values not printed)"
 

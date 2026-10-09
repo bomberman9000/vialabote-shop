@@ -7,6 +7,7 @@ import { parseCommand, type ParsedCommand } from "./command-parser";
 import { resolveProductByQuery, type ProductCandidate } from "./entity-resolver";
 import { resolveTelegramActor, toAdminActor } from "./actor-resolver";
 import { createPendingConfirmation, consumeConfirmation, cancelConfirmation } from "./confirmation-service";
+import { isTelegramMutationsEnabled, TELEGRAM_MUTATIONS_DISABLED_MESSAGE } from "./config";
 import { setPrice, setDiscount, publishProduct, archiveProduct } from "@/lib/admin/commands/product";
 import { effectivePrice } from "@/lib/pricing/effective-price";
 import { formatPrice } from "@/lib/money";
@@ -165,7 +166,12 @@ export async function prepareCommand(actorTelegramUserId: string, rawText: strin
   }
 
   // Оставшиеся типы (SET_DISCOUNT/SET_PRICE/PUBLISH_PRODUCT/ARCHIVE_PRODUCT) —
-  // все требуют productQuery -> resolve.
+  // мутации. Kill switch проверяется ДО resolve и до создания confirmation.
+  if (!isTelegramMutationsEnabled()) {
+    return { kind: "unsupported", message: TELEGRAM_MUTATIONS_DISABLED_MESSAGE };
+  }
+
+  // Все требуют productQuery -> resolve.
   const productQuery = "productQuery" in intent ? intent.productQuery : null;
   if (!productQuery) return { kind: "unknown_command" };
 
@@ -195,6 +201,12 @@ export interface ExecuteOutcome {
 
 /** Шаг 2: оператор нажал "Подтвердить" — единственное место, где происходит мутация. */
 export async function executeConfirmation(actorTelegramUserId: string, confirmationId: string): Promise<ExecuteOutcome> {
+  // Confirmation, созданная до выключения флага, тоже не исполняется и не
+  // расходуется — её можно подтвердить позже, после включения.
+  if (!isTelegramMutationsEnabled()) {
+    return { ok: false, message: TELEGRAM_MUTATIONS_DISABLED_MESSAGE };
+  }
+
   let consumed;
   try {
     consumed = await consumeConfirmation(confirmationId, actorTelegramUserId);

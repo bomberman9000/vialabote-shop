@@ -29,8 +29,28 @@ cat > "$NOTICE_DIR/__dr/limited.html" <<'EOF'
 EOF
 chmod 0644 "$NOTICE_DIR/__dr/limited.html"
 
-cat > /etc/nginx/conf.d/vialabote-limited-map.conf <<'EOF'
-map $request_method $vialabote_write { default 1; GET 0; HEAD 0; }
+# Telegram CMS exception (owner decision 2026-10-09): exactly POST shop.vialabote.ru
+# /api/telegram/webhook passes, and only when X-Telegram-Bot-Api-Secret-Token equals the
+# secret in $TG_MAP (0600 root, written by vm-telegram-activate.sh; nginx reads it as root).
+# No file -> no exception (fail closed). Every other write stays 503 as before.
+TG_MAP=/etc/nginx/vialabote-telegram-secret.map
+if [ -s "$TG_MAP" ]; then
+  # exact-match regex key: a 64-char plain key does not fit map_hash_bucket_size 64 (nginx -t fails)
+  grep -qxE '"~\^[0-9a-f]{64}\$" 1;' "$TG_MAP" || { echo "ABORT: $TG_MAP malformed" >&2; exit 1; }
+  [ "$(stat -c '%a %U' "$TG_MAP")" = "600 root" ] || { echo "ABORT: $TG_MAP must be 0600 root" >&2; exit 1; }
+  TG_SRC="map \$http_x_telegram_bot_api_secret_token \$vialabote_tg_ok { default 0; include $TG_MAP; }"
+else
+  TG_SRC='map $host $vialabote_tg_ok { default 0; }'
+fi
+cat > /etc/nginx/conf.d/vialabote-limited-map.conf <<EOF
+map \$request_method \$vialabote_method_write { default 1; GET 0; HEAD 0; }
+$TG_SRC
+map "\$host \$request_method \$uri \$vialabote_tg_ok" \$vialabote_write {
+    default \$vialabote_method_write;
+    "shop.vialabote.ru POST /api/telegram/webhook 1" 0;
+}
+EOF
+cat >> /etc/nginx/conf.d/vialabote-limited-map.conf <<'EOF'
 # scheme as seen by the client (edge sets X-Forwarded-Proto https)
 map $http_x_forwarded_proto $vialabote_proto { default $http_x_forwarded_proto; "" $scheme; }
 EOF
@@ -103,6 +123,8 @@ c 503 POST $S2 /api/auth/register "Content-Type: application/json" '{}'
 c 503 POST $S2 /api/auth/callback/credentials
 c 503 POST $S2 /api/payment/webhook
 c 503 POST $S2 /api/telegram/webhook
+c 503 POST $S2 /api/telegram/webhook "X-Telegram-Bot-Api-Secret-Token: wrong-secret"
+c 503 POST $S1 /api/telegram/webhook "X-Telegram-Bot-Api-Secret-Token: wrong-secret"
 c 503 PUT $S2 /api/admin/products
 c 503 DELETE $S2 /api/admin/media/x
 c 503 GET $S1 /checkout;   c 503 GET $S1 /custom-product; c 503 GET $S1 /internal/orders

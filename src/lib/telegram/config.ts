@@ -22,6 +22,19 @@ export function isTelegramConfigured(): boolean {
   );
 }
 
+// Kill switch для мутаций каталога через Telegram (цена, скидка, publish,
+// archive). По умолчанию ВЫКЛЮЧЕНО: бот отвечает на read-only команды, но
+// не создаёт confirmation и не исполняет уже созданные. Включается только
+// явным TELEGRAM_CMS_MUTATIONS=enabled после отдельной проверки (owner
+// decision 2026-10-09). Web Admin этим флагом не затрагивается.
+export function isTelegramMutationsEnabled(): boolean {
+  return process.env.TELEGRAM_CMS_MUTATIONS?.trim() === "enabled";
+}
+
+export const TELEGRAM_MUTATIONS_DISABLED_MESSAGE =
+  "Изменения каталога через Telegram сейчас отключены (режим только чтения). " +
+  "Доступны команды просмотра, например «показать товары без INCI».";
+
 export function getTelegramBotToken(): string {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {

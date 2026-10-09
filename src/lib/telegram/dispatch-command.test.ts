@@ -33,7 +33,12 @@ async function makeProduct(title: string, slug: string) {
   return p;
 }
 
+// Существующие сценарии проверяют полный цикл мутаций — включаем kill switch
+// на время файла; выключенный режим проверяется в отдельном describe ниже.
+const ORIGINAL_MUTATIONS = process.env.TELEGRAM_CMS_MUTATIONS;
+
 beforeAll(async () => {
+  process.env.TELEGRAM_CMS_MUTATIONS = "enabled";
   const category = await prisma.category.create({
     data: { name: "TEST-Dispatch", slug: `test-dispatch-${suffix}` },
   });
@@ -65,6 +70,8 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  if (ORIGINAL_MUTATIONS === undefined) delete process.env.TELEGRAM_CMS_MUTATIONS;
+  else process.env.TELEGRAM_CMS_MUTATIONS = ORIGINAL_MUTATIONS;
   await prisma.discount.deleteMany({ where: { productId: { in: productIds } } });
   await prisma.auditLog.deleteMany({ where: { actorId: adminUserId } });
   await prisma.product.deleteMany({ where: { id: { in: productIds } } });
@@ -283,5 +290,51 @@ describe("Telegram preview vs checkout — единая effectivePrice()", () =>
 
     await prisma.orderItem.deleteMany({ where: { orderId: order.id } });
     await prisma.order.delete({ where: { id: order.id } });
+  });
+});
+
+describe("TELEGRAM_CMS_MUTATIONS выключен — каталог только для чтения", () => {
+  afterEach(() => {
+    process.env.TELEGRAM_CMS_MUTATIONS = "enabled";
+  });
+
+  it("мутация -> unsupported, PendingConfirmation не создаётся, цена не меняется", async () => {
+    const p = await makeProduct(`RO ${suffix}`, `ro-${suffix}`);
+    delete process.env.TELEGRAM_CMS_MUTATIONS;
+    const r = await prepareCommand(ADMIN_TG_ID, `цена RO ${suffix} 9999`);
+    expect(r.kind).toBe("unsupported");
+    expect(await prisma.pendingConfirmation.count({ where: { actorTelegramUserId: ADMIN_TG_ID } })).toBe(0);
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: p.id } })).price).toBe(5000);
+  });
+
+  it("любое значение, кроме 'enabled', считается выключенным", async () => {
+    process.env.TELEGRAM_CMS_MUTATIONS = "true";
+    const r = await prepareCommand(ADMIN_TG_ID, `опубликовать anything-${suffix}`);
+    expect(r.kind).toBe("unsupported");
+  });
+
+  it("read-only команда работает", async () => {
+    delete process.env.TELEGRAM_CMS_MUTATIONS;
+    const r = await prepareCommand(ADMIN_TG_ID, "показать товары без INCI");
+    expect(r.kind).toBe("immediate_result");
+  });
+
+  it("неадмин по-прежнему not_authorized (до проверки флага)", async () => {
+    delete process.env.TELEGRAM_CMS_MUTATIONS;
+    expect((await prepareCommand(UNBOUND_TG_ID, "показать товары без INCI")).kind).toBe("not_authorized");
+    expect((await prepareCommand(NON_ADMIN_TG_ID, "цена X 100")).kind).toBe("not_authorized");
+  });
+
+  it("confirmation, созданная при включённом флаге, не исполняется после выключения и не расходуется", async () => {
+    const p = await makeProduct(`ROC ${suffix}`, `roc-${suffix}`);
+    const prep = await prepareCommand(ADMIN_TG_ID, `цена ROC ${suffix} 7777`);
+    expect(prep.kind).toBe("confirmation_required");
+    if (prep.kind !== "confirmation_required") return;
+    delete process.env.TELEGRAM_CMS_MUTATIONS;
+    const out = await executeConfirmation(ADMIN_TG_ID, prep.confirmationId);
+    expect(out.ok).toBe(false);
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: p.id } })).price).toBe(5000);
+    const c = await prisma.pendingConfirmation.findUniqueOrThrow({ where: { id: prep.confirmationId } });
+    expect(c.status).toBe("pending");
   });
 });

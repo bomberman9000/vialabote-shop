@@ -86,6 +86,8 @@ NEXTAUTH_SECRET=$NEXTAUTH_SECRET
 NEXTAUTH_URL=http://127.0.0.1:$PORT
 NEXT_PUBLIC_APP_URL=http://127.0.0.1:$PORT
 EOF
+# Keep the Telegram CMS settings written by site2-telegram-connect.sh.
+[ -f "$APP_ENV" ] && grep -E '^(TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET)=' "$APP_ENV" >> "$APP_ENV.tmp" || true
 chown root:root "$APP_ENV.tmp"; chmod 600 "$APP_ENV.tmp"; mv "$APP_ENV.tmp" "$APP_ENV"
 unset DATABASE_URL NEXTAUTH_SECRET line
 umask 022
@@ -208,7 +210,7 @@ echo "process: pid=$PID1 user=$PUSER rss=$(( $(ps -o rss= -p "$PID1") / 1024 ))M
 echo "restart policy: $(systemctl show -p Restart --value vialabote-shop) (RestartSec=$(systemctl show -p RestartUSec --value vialabote-shop))"
 # Secrets must not be in status/journal/unit properties.
 SEC_LEAK=NO
-for v in $(grep -E '^(DATABASE_URL|NEXTAUTH_SECRET)=' "$APP_ENV" | cut -d= -f2- | sed -E 's#.*://[^:]+:([^@]+)@.*#\1#'); do
+for v in $(grep -E '^(DATABASE_URL|NEXTAUTH_SECRET|TELEGRAM_BOT_TOKEN|TELEGRAM_WEBHOOK_SECRET)=' "$APP_ENV" | cut -d= -f2- | sed -E 's#.*://[^:]+:([^@]+)@.*#\1#'); do
   { systemctl status vialabote-shop --no-pager -l 2>&1; systemctl show vialabote-shop 2>&1; journalctl -u vialabote-shop --no-pager -o cat 2>&1; } | grep -qF "$v" && SEC_LEAK=YES
 done
 unset v

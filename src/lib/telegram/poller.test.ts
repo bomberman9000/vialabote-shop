@@ -1,5 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { prisma } from "@/lib/prisma";
 import { POST } from "@/app/api/telegram/webhook/route";
 import {
@@ -45,6 +49,28 @@ function fakeFetch(
 const msgUpdate = (id: number, from: number, text: string) => ({
   update_id: id,
   message: { message_id: 1, chat: { id: from }, from: { id: from }, text },
+});
+
+describe("telegram-poller — started through a symlinked release dir (systemd / preflight)", () => {
+  it("main() runs: without credentials it fails loudly instead of exiting 0 silently", () => {
+    // production layout: /opt/vialabote-shop/current -> releases/<sha>, ExecStart uses current/…
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "poller-symlink-"));
+    try {
+      const release = path.join(root, "releases", "abc1234", "scripts");
+      fs.mkdirSync(release, { recursive: true });
+      fs.copyFileSync(path.resolve(__dirname, "../../../scripts/telegram-poller.mjs"), path.join(release, "telegram-poller.mjs"));
+      fs.symlinkSync(path.join("releases", "abc1234"), path.join(root, "current"));
+      const r = spawnSync(process.execPath, [path.join(root, "current", "scripts", "telegram-poller.mjs"), "--check"], {
+        env: { PATH: process.env.PATH } as unknown as NodeJS.ProcessEnv,
+        encoding: "utf8",
+        timeout: 20_000,
+      });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET are required");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("telegram-poller — config and logging", () => {

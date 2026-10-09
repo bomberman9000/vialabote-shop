@@ -20,7 +20,8 @@
 //
 // usage: node scripts/telegram-poller.mjs            run until SIGTERM
 //        node scripts/telegram-poller.mjs --check    getMe + getWebhookInfo + app route, exit 0/1
-import { pathToFileURL } from "node:url";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 /** @typedef {(url: string, init: any) => Promise<Response>} FetchLike */
 /** @typedef {{ signal?: AbortSignal, fetchImpl?: FetchLike }} CallOpts */
@@ -182,7 +183,18 @@ async function main() {
   log("polling stopped");
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+// Main-module check on real paths: systemd starts us as /opt/vialabote-shop/current/scripts/…
+// (`current` is a symlink), and Node resolves the main module to releases/<sha>/scripts/…, so
+// comparing import.meta.url with argv[1] never matched and the process exited 0 doing nothing.
+function isMain() {
+  try {
+    return fs.realpathSync(process.argv[1] ?? "") === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
   main().catch((err) => {
     console.error(String(err?.message ?? err).split(process.env.TELEGRAM_BOT_TOKEN || "\u0000").join("<token>"));
     process.exit(1);

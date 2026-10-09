@@ -132,6 +132,8 @@ WorkingDirectory=$OPT/current
 # flock: a second copy started by hand with the same command cannot run in parallel
 ExecStart=/usr/bin/flock -n /run/vialabote-telegram-poller/lock $NODE $OPT/current/scripts/telegram-poller.mjs
 RuntimeDirectory=vialabote-telegram-poller
+# last handled update_id survives restarts (dedup); writable despite ProtectSystem=strict
+StateDirectory=vialabote-telegram-poller
 Restart=always
 RestartSec=30
 NoNewPrivileges=yes

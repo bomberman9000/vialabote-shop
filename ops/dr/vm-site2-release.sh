@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Vialabote ZeroHour PRIMARY — deploy / roll back a SITE_2 (shop.vialabote.ru) release.
 # Runs INSIDE vialabote-dr as root. Only SITE_2 changes: its `current` symlink and a restart of
-# vialabote-shop.service (+ vialabote-telegram-poller.service if it is installed). SITE_1, DNS,
+# vialabote-shop.service (+ vialabote-telegram-poller.service if it is installed, which also gets
+# a StateDirectory= drop-in once, for the V2 bridge's dedup state). SITE_1, DNS,
 # the VDSina edge, WireGuard, PostgreSQL, nginx/limited mode, app.env are not touched.
 #
 #   deploy <sha7>   verify bundle + this script == its copy in the bundle -> remember the
@@ -74,7 +75,18 @@ checks() {  # prints one line per check, "PASS"/"FAIL" first; sets CORE (shop+ca
     code=$(curl -s -o /dev/null -m 20 -w '%{http_code}' "https://$DOMAIN$f"); [ "$code" = 200 ] && r PASS "public https://$DOMAIN$f $code" || r FAIL "public https://$DOMAIN$f $code"
   done
 }
+poller_state_dropin() {  # V2 bridge keeps its last handled update_id in StateDirectory (idempotent)
+  local d=/etc/systemd/system/$POLLER.d
+  systemctl cat "$POLLER" >/dev/null 2>&1 || return 0
+  systemctl cat "$POLLER" | grep -q '^StateDirectory=' && return 0
+  install -d -m 0755 "$d"
+  printf '[Service]\nStateDirectory=vialabote-telegram-poller\n' > "$d/10-state.conf"
+  chmod 644 "$d/10-state.conf"
+  systemctl daemon-reload
+  echo "poller: StateDirectory drop-in added ($d/10-state.conf)"
+}
 restart_site2() {
+  poller_state_dropin
   systemctl restart vialabote-shop.service
   wait_up || return 1
   if systemctl cat "$POLLER" >/dev/null 2>&1 && systemctl is-enabled --quiet "$POLLER"; then systemctl restart "$POLLER"; sleep 3; fi

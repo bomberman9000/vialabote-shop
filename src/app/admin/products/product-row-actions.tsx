@@ -1,29 +1,44 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
 export function ProductRowActions({
   productId,
   isActive,
+  version,
 }: {
   productId: string;
   isActive: boolean;
+  version: number;
 }) {
-  const router = useRouter();
-
   async function toggleActive() {
-    await fetch(`/api/admin/products/${productId}`, {
+    const res = await fetch(`/api/admin/products/${productId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !isActive }),
+      body: JSON.stringify({ action: isActive ? "archive" : "publish", expectedVersion: version }),
     });
-    router.refresh();
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      alert(body.message ?? "Не удалось изменить статус товара");
+      return;
+    }
+    // Hard reload, не router.refresh() — надёжно на страницах с несколькими
+    // независимо мутирующими client-компонентами (см. коммент в
+    // admin/products/[id]/product-lifecycle-actions.tsx).
+    window.location.reload();
   }
 
   async function remove() {
     if (!confirm("Удалить товар?")) return;
-    await fetch(`/api/admin/products/${productId}`, { method: "DELETE" });
-    router.refresh();
+    const res = await fetch(`/api/admin/products/${productId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedVersion: version }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      alert(body.message ?? "Не удалось удалить товар");
+      return;
+    }
+    window.location.reload();
   }
 
   return (

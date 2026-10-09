@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createPayment } from "@/lib/yookassa";
+import { effectivePrice, toDiscountInput } from "@/lib/pricing/effective-price";
 
 const checkoutSchema = z.object({
   customerName: z.string().min(2),
@@ -16,10 +17,11 @@ const checkoutSchema = z.object({
     .array(
       z.object({
         productId: z.string(),
-        quantity: z.number().int().positive(),
+        quantity: z.number().int().positive().max(100),
       }),
     )
-    .min(1),
+    .min(1)
+    .max(50),
 });
 
 export async function POST(req: Request) {
@@ -32,8 +34,13 @@ export async function POST(req: Request) {
 
   const session = await getServerSession(authOptions);
 
+  // include: discount — итоговая цена ВСЕГДА пересчитывается сервером через
+  // effectivePrice(), а не берётся из клиента (клиент вообще не может
+  // передать price — см. checkoutSchema выше, там его нет). Единственный
+  // authoritative источник: Product.price + активный Discount из БД.
   const products = await prisma.product.findMany({
     where: { id: { in: data.items.map((i) => i.productId) } },
+    include: { discount: true },
   });
 
   if (products.length !== data.items.length) {
@@ -42,10 +49,11 @@ export async function POST(req: Request) {
 
   const orderItems = data.items.map((i) => {
     const product = products.find((p) => p.id === i.productId)!;
+    const priced = effectivePrice(product.price, toDiscountInput(product.discount));
     return {
       productId: product.id,
       title: product.title,
-      price: product.price,
+      price: priced.effectivePrice,
       quantity: i.quantity,
     };
   });

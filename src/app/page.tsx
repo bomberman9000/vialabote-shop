@@ -1,26 +1,50 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { FlaskConical, Sprout, ShieldCheck, Factory, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { ProductCard } from "@/components/product-card";
+import { ProductCard, ProductGrid } from "@/components/product-card";
+import Image from "next/image";
+import { ConcernCard, ConcernGrid } from "@/components/concern-card";
+import { Reveal } from "@/components/reveal";
+import { toProductCardData } from "@/lib/product-card-data";
+import { Hero } from "@/components/hero";
+import { concernTitle, CONCERN_VISUALS } from "@/lib/concerns";
 
 export const dynamic = "force-dynamic";
 
-const TRUST_BADGES = [
-  { icon: "🧪", label: "Эффективные формулы" },
-  { icon: "🌿", label: "Натуральные компоненты" },
-  { icon: "🛡️", label: "Безопасно для кожи" },
-  { icon: "✅", label: "Дерматологически протестировано" },
-];
+// rf_concern/rf_skin/rf_scope — shareable-состояние Routine Finder;
+// canonical держит все такие варианты на базовой "/", без отдельной индексации.
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
-const CATEGORY_TILES = [
+// Формулировки бренда (vialabote.ru) + описания по утверждённому макету.
+// Иконки — Lucide (единственная утверждённая icon-система storefront), без emoji.
+const TRUST_BADGES = [
   {
-    title: "Персональный уход",
-    subtitle: "Твоя индивидуальная история",
-    href: "/catalog?category=uhod-za-litsom",
+    icon: FlaskConical,
+    label: "Формулы\nс активными компонентами",
+    description: "Рабочие концентрации и продуманные сочетания",
   },
   {
-    title: "Магазин косметики",
-    subtitle: "Твой готовый уход",
-    href: "/catalog",
+    icon: Sprout,
+    label: "Продуманные\nсоставы",
+    description: "Баланс природы и науки в каждой формуле",
+  },
+  {
+    icon: ShieldCheck,
+    label: "Контроль\nкачества",
+    description: "Многоступенчатая проверка на всех этапах производства",
+  },
+  {
+    icon: Factory,
+    label: "Собственное\nпроизводство",
+    description: "Современные лаборатории и высокие стандарты",
+  },
+  {
+    icon: Sparkles,
+    label: "Уход по\nпотребностям кожи",
+    description: "Подберите программу ухода с помощью Routine Finder",
   },
 ];
 
@@ -28,60 +52,73 @@ export default async function HomePage() {
   const products = await prisma.product.findMany({
     where: { isActive: true },
     orderBy: { createdAt: "desc" },
-    take: 8,
+    include: { discount: true },
   });
 
-  return (
-    <div className="flex flex-col gap-16">
-      <section className="card flex flex-col items-start gap-4 overflow-hidden p-10 md:p-16">
-        <p className="text-sm uppercase tracking-[0.2em] text-brand-400">Наука. Природа. Гармония.</p>
-        <h1 className="max-w-2xl text-3xl font-semibold text-brand-800 md:text-4xl">
-          Vialabote — лаборатория персональной косметики, где каждая формула — точный ответ коже
-        </h1>
-        <p className="max-w-xl text-brand-600">
-          Раньше — только на Wildberries и Ozon. Теперь у нас свой магазин: прямая доставка,
-          честные цены без комиссии маркетплейсов и бонусы для постоянных покупателей.
-        </p>
-        <div className="flex gap-3">
-          <Link href="/catalog" className="btn-primary">
-            Смотреть каталог
-          </Link>
-          <Link href="#about" className="btn-outline">
-            О бренде
-          </Link>
-        </div>
-      </section>
+  // Плитки потребностей строятся по БД: список — из Concern. Картинка —
+  // абстрактная текстура потребности (CONCERN_VISUALS), а для потребности без
+  // неё — фото реального опубликованного товара. Потребность без единого
+  // видимого товара плитку не получает, поэтому архивация SKU не оставляет
+  // ссылку на пустой фильтр, а новый размеченный товар подхватывается сам.
+  const concerns = await prisma.concern.findMany({ orderBy: { name: "asc" } });
+  const concernTiles = (
+    await Promise.all(
+      concerns.map(async (concern) => {
+        const product = await prisma.product.findFirst({
+          where: { isActive: true, concerns: { some: { concern: { slug: concern.slug } } } },
+          orderBy: { createdAt: "desc" },
+          select: { imageUrl: true },
+        });
+        if (!product) return null;
+        const visual = CONCERN_VISUALS[concern.slug];
+        return {
+          slug: concern.slug,
+          title: concernTitle(concern),
+          image: visual?.image ?? product.imageUrl,
+          tone: visual?.tone ?? ("dark" as const),
+        };
+      }),
+    )
+  ).filter((tile): tile is NonNullable<typeof tile> => tile !== null);
 
-      <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {TRUST_BADGES.map((badge) => (
-          <div key={badge.label} className="card flex flex-col items-center gap-2 p-4 text-center">
-            <span className="text-2xl">{badge.icon}</span>
-            <span className="text-xs font-medium uppercase tracking-wide text-brand-600">
+  return (
+    <div className="flex flex-col gap-14 md:gap-20">
+      <Hero />
+
+      {/* WHY VIALABOTE — реальные формулировки бренда */}
+      <section className="grid grid-cols-2 gap-y-8 sm:grid-cols-3 md:grid-cols-5 md:gap-y-0">
+        {TRUST_BADGES.map((badge, i) => (
+          <div
+            key={badge.label}
+            className={`flex flex-col gap-3 px-4 md:px-6 ${
+              i > 0 ? "md:border-l md:border-brand-100" : ""
+            }`}
+          >
+            <badge.icon size={32} strokeWidth={1.4} className="text-gold-500" aria-hidden="true" />
+            <span className="whitespace-pre-line text-sm font-bold leading-snug text-brand-900">
               {badge.label}
             </span>
+            <span className="text-[13px] leading-relaxed text-brand-500">{badge.description}</span>
           </div>
         ))}
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2">
-        {CATEGORY_TILES.map((tile) => (
+      {/* BESTSELLERS — сразу после hero и trust-блока */}
+      <Reveal>
+      <section aria-labelledby="bestsellers-title">
+        <div className="mb-8 flex items-end justify-between gap-4">
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">Коллекция</p>
+            <h2 id="bestsellers-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">
+              Бестселлеры
+            </h2>
+          </div>
           <Link
-            key={tile.title}
-            href={tile.href}
-            className="card group flex min-h-[220px] flex-col justify-end gap-1 bg-gradient-to-br from-brand-100 to-brand-200 p-8 transition-transform hover:-translate-y-0.5"
+            href="/catalog"
+            className="group inline-flex min-h-11 items-center gap-1.5 text-xs font-bold uppercase tracking-[0.1em] text-brand-700 transition-colors hover:text-gold-500"
           >
-            <span className="text-xs uppercase tracking-wide text-brand-500">{tile.subtitle}</span>
-            <span className="text-2xl font-semibold text-brand-800">{tile.title}</span>
-            <span className="mt-2 text-sm text-brand-600 group-hover:underline">Подробнее →</span>
-          </Link>
-        ))}
-      </section>
-
-      <section>
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-brand-800">Новинки и бестселлеры</h2>
-          <Link href="/catalog" className="text-sm text-brand-600 hover:underline">
-            Весь каталог →
+            Весь каталог
+            <span aria-hidden="true" className="transition-transform duration-200 group-hover:translate-x-1">→</span>
           </Link>
         </div>
         {products.length === 0 ? (
@@ -90,34 +127,72 @@ export default async function HomePage() {
             товары, либо выполните `npm run db:seed`.
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          <ProductGrid columns={3}>
             {products.map((p) => (
-              <ProductCard
-                key={p.id}
-                product={{
-                  id: p.id,
-                  slug: p.slug,
-                  title: p.title,
-                  price: p.price,
-                  oldPrice: p.oldPrice,
-                  imageUrl: p.imageUrl,
-                  stock: p.stock,
-                }}
-              />
+              <ProductCard key={p.id} product={toProductCardData(p)} />
             ))}
-          </div>
+          </ProductGrid>
         )}
       </section>
+      </Reveal>
 
-      <section id="about" className="card p-8">
-        <h2 className="mb-2 text-xl font-semibold text-brand-800">О бренде</h2>
-        <p className="text-brand-600">
-          Vialabote — лаборатория персональной косметики: каждая формула создаётся как точный ответ
-          коже. Этот сайт — наш собственный интернет-магазин, дополняющий продажи на маркетплейсах:
-          здесь действуют отдельные акции, есть личный кабинет с историей заказов и прямая связь
-          с нами.
-        </p>
+      {/* SHOP BY CONCERN — состав и картинки из БД, без фиктивной таксономии */}
+      {concernTiles.length > 0 && (
+        <Reveal>
+        <section id="concerns" aria-labelledby="concerns-title">
+          <div className="mb-8 flex flex-col gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">Задача кожи</p>
+            <h2 id="concerns-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">
+              Подберите уход по потребности
+            </h2>
+          </div>
+          <ConcernGrid>
+            {concernTiles.map((concern) => (
+              <ConcernCard key={concern.slug} concern={concern} />
+            ))}
+          </ConcernGrid>
+        </section>
+        </Reveal>
+      )}
+
+      {/* BRAND STORY */}
+      <Reveal>
+      <section
+        id="about"
+        aria-labelledby="about-title"
+        className="card-dark grid scroll-mt-28 overflow-hidden md:grid-cols-[1.15fr_0.85fr]"
+      >
+        <div className="flex flex-col justify-center gap-5 p-8 sm:p-10 md:p-14">
+          <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gold-300">О бренде</p>
+          <h2 id="about-title" className="text-[2rem] leading-[1.1] sm:text-[2.5rem]">
+            Наука. Природа. Гармония.
+          </h2>
+          <p className="max-w-[46ch] text-[15px] leading-relaxed text-brand-200 sm:text-base">
+            Via Labote — лаборатория персональной косметики, где каждая формула создаётся как
+            точный ответ коже. Здесь продукция бренда доступна напрямую — только оригинальные
+            средства, — а уход можно подобрать под задачи именно вашей кожи.
+          </p>
+          <ul className="mt-2 grid gap-3 border-t border-brand-700 pt-6 sm:grid-cols-2">
+            {TRUST_BADGES.map((badge) => (
+              <li key={badge.label} className="flex items-center gap-3 text-brand-100">
+                <badge.icon size={18} strokeWidth={1.6} className="shrink-0 text-gold-300" aria-hidden="true" />
+                <span className="text-sm">{badge.label.replace("\n", " ")}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        {/* Редакционный снимок реального продукта бренда (assets/product-media/editorial) */}
+        <div className="relative min-h-[280px] md:min-h-full">
+          <Image
+            src="/images/editorial/brand-story.webp"
+            alt="Гидрофильное гель-масло VIA LABOTE"
+            fill
+            className="object-cover"
+            sizes="(min-width: 768px) 40vw, 100vw"
+          />
+        </div>
       </section>
+      </Reveal>
     </div>
   );
 }

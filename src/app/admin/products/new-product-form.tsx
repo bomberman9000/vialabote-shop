@@ -18,7 +18,6 @@ export function NewProductForm() {
   const [form, setForm] = useState({
     title: "",
     priceRub: "",
-    imageUrl: "",
     stock: "10",
     categoryName: "Уход за лицом",
     description: "",
@@ -37,23 +36,27 @@ export function NewProductForm() {
         slug: slugify(form.title) + "-" + Date.now().toString(36),
         description: form.description,
         price: Math.round(Number(form.priceRub) * 100),
-        imageUrl: form.imageUrl || "/images/placeholder.svg",
         stock: Number(form.stock),
         categorySlug: slugify(form.categoryName),
         categoryName: form.categoryName,
-        isActive: true,
+        // Публикация — отдельным явным шагом на странице товара (после того
+        // как загружено фото), не сразу при создании.
+        publish: false,
       }),
     });
 
     setLoading(false);
 
     if (!res.ok) {
-      setError("Не удалось добавить товар");
+      const body = await res.json().catch(() => ({}));
+      setError(body.message ?? "Не удалось добавить товар");
       return;
     }
 
-    setForm({ ...form, title: "", priceRub: "", imageUrl: "", description: "" });
-    router.refresh();
+    const product = await res.json();
+    // Товар создан в статусе draft с placeholder-картинкой — сразу ведём на
+    // страницу редактирования, чтобы загрузить фото и опубликовать.
+    router.push(`/admin/products/${product.id}`);
   }
 
   return (
@@ -91,12 +94,6 @@ export function NewProductForm() {
         value={form.stock}
         onChange={(e) => setForm({ ...form, stock: e.target.value })}
       />
-      <input
-        placeholder="URL картинки (/images/products/... после загрузки в репозиторий)"
-        className="input md:col-span-2"
-        value={form.imageUrl}
-        onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-      />
       <textarea
         placeholder="Описание"
         className="input md:col-span-2"
@@ -106,7 +103,7 @@ export function NewProductForm() {
       />
       {error ? <p className="text-sm text-red-600 md:col-span-2">{error}</p> : null}
       <button className="btn-primary w-fit md:col-span-2" disabled={loading}>
-        {loading ? "Добавляем..." : "Добавить"}
+        {loading ? "Создаём..." : "Создать (черновик)"}
       </button>
     </form>
   );

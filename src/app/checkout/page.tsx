@@ -52,11 +52,18 @@ export default function CheckoutPage() {
         return;
       }
 
-      clear();
+      if (data.paymentError) {
+        // Заказ создан, но платёж не открылся — корзину не трогаем.
+        setError("Не удалось открыть оплату. Заказ сохранён, попробуйте ещё раз или свяжитесь с нами.");
+        setLoading(false);
+        return;
+      }
 
       if (data.paymentUrl) {
+        // Корзина очищается на странице успеха только после подтверждения оплаты.
         window.location.href = data.paymentUrl;
       } else {
+        clear();
         router.push(`/checkout/success?order=${data.orderNumber}`);
       }
     } catch {

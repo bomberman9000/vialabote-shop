@@ -73,9 +73,12 @@ Added on top of V2 (branch `claude/telegram-admin-bot`):
 | Stock races | reserve / release / commit of one order are serialized by `SELECT … FOR UPDATE` on the order row |
 
 Order (owner's go-ahead for each step):
-1. Back up the DB, then apply the migrations (both files, in order) on the VM (`prisma migrate deploy` from the release, or the SQL file with `psql`). Until it is applied, a stock confirmation fails with an error and **does not** change the stock (the log write is in the same transaction).
+1. **Migrations BEFORE the code — mandatory.** Back up the DB, then apply both migrations in order on the VM (`prisma migrate deploy` from the release, or the two SQL files with `psql`): `20261027000000_stock_change_log`, then `20261027010000_product_card_fields`.
+   - **Code before migration 2 takes the storefront down.** The new Prisma client selects every scalar `Product` column, so without `warnings` / `shelfLife` / `manufacturer` *every* product query fails: catalog, product page, cart, bot. Checked on a scratch PostgreSQL 18 with the new code: `The column Product.warnings does not exist in the current database`. `vm-site2-release.sh` would roll back on its catalog check, but do not rely on that.
+   - Without migration 1 (`StockChangeLog`) a stock confirmation fails with an error and **does not** change the stock (the log write is in the same transaction).
+   - Applying the migrations first is safe for the code that is live now: the columns and the table are additive and nullable. Checked: the `d419b43` client on the migrated DB reads products normally and ignores the new columns.
 2. Add `TELEGRAM_ADMIN_IDS=<owner numeric id>` to `/etc/vialabote-shop/app.env` (the id: send `/start` to @userinfobot, or take `from=` from the poller log).
 3. Deploy as above (`vm-site2-release.sh deploy <sha7>`) — both the app and the poller must be the V2 versions (V1 bridge never sends `answerCallbackQuery`).
 4. Smoke from the owner account: every menu button; Статистика -> День/Неделя/Месяц; Остатки -> товар -> +1 -> Применить -> Отмена (nothing written); one real stock change and its `StockChangeLog` row; from another account: «Нет доступа».
 
-Rollback: as above; the `StockChangeLog` table can stay (nothing reads it in 7da4097). To make the bot read-only again without a rollback: remove `TELEGRAM_ADMIN_IDS` (then read access falls back to ADMIN in DB) and restart SITE_2.
+Rollback: as above. **Rolling the code back after the migrations is safe and needs no down-migration**: the old code ignores the extra nullable `Product` columns and the `StockChangeLog` table (checked with the `d419b43` client on the migrated DB). Do not drop the columns while the new code is live. To make the bot read-only again without a rollback: remove `TELEGRAM_ADMIN_IDS` (then read access falls back to ADMIN in DB) and restart SITE_2.

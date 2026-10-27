@@ -68,7 +68,7 @@ Added on top of V2 (branch `claude/telegram-admin-bot`):
 | Stock | product -> +/-1, +/-10 or a typed number (`12`, `+5`, `-3`) -> «было → станет» -> Подтвердить. Writes `Product.stock` + `StockChangeLog` + `AuditLog` in one transaction |
 | Cards | title, price (rubles), description, INCI, main photo (square ≥1200 px, validated before the preview), visibility (published / draft / archived) — each with a preview and «Подтвердить» via `PendingConfirmation` |
 | Stats | day / week / month buttons: revenue (+% vs previous period), orders, paid, average check, top-5 products, sparkline, order statuses, stock units, out / low / deficit (stock lasts < 7 days at the period's pace) |
-| DB | **migration** `prisma/migrations/20261027000000_stock_change_log` (additive: new table `StockChangeLog`) |
+| DB | **migration** `prisma/migrations/20261027000000_stock_change_log` (additive: new table `StockChangeLog` with `reason` ADJUST/RESERVE/RELEASE/WRITE_OFF, `orderId`, unique `(orderId, productId, reason)`) — the single stock journal for site orders, payments and the bot (`src/lib/stock/movements.ts`, contract in `docs/stock-movements-contract.md`) |
 
 Order (owner's go-ahead for each step):
 1. Back up the DB, then apply the migration on the VM (`prisma migrate deploy` from the release, or the SQL file with `psql`). Until it is applied, a stock confirmation fails with an error and **does not** change the stock (the log write is in the same transaction).

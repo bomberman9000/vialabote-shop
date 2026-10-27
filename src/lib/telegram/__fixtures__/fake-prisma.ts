@@ -56,7 +56,12 @@ function sortRows(rows: Row[], orderBy: any): Row[] {
 let seq = 0;
 class Model {
   rows: Row[] = [];
-  constructor(public db: FakeDb, private defaults: () => Row = () => ({})) {}
+  constructor(
+    public db: FakeDb,
+    private defaults: () => Row = () => ({}),
+    /** составные unique-индексы; как в PostgreSQL, строки с NULL в индексе не конфликтуют */
+    private uniques: string[][] = [],
+  ) {}
   async findUnique({ where, select: sel }: any) {
     const r = this.rows.find((x) => match(x, where));
     return r ? select(r, sel, this) : null;
@@ -79,6 +84,15 @@ class Model {
   }
   async create({ data }: any) {
     const row = { id: `id${++seq}`, createdAt: new Date(), ...this.defaults(), ...data };
+    for (const fields of this.uniques) {
+      if (fields.some((f) => row[f] === null || row[f] === undefined)) continue;
+      if (this.rows.some((r) => fields.every((f) => r[f] === row[f]))) {
+        throw Object.assign(new Error(`Unique constraint failed on the fields: (${fields.join(",")})`), {
+          code: "P2002",
+          meta: { target: fields },
+        });
+      }
+    }
     this.rows.push(row);
     return { ...row };
   }
@@ -87,6 +101,7 @@ class Model {
     for (const r of hit) {
       for (const [k, v] of Object.entries(data)) {
         if (v && typeof v === "object" && "increment" in (v as any)) r[k] += (v as any).increment;
+        else if (v && typeof v === "object" && "decrement" in (v as any)) r[k] -= (v as any).decrement;
         else r[k] = v;
       }
     }
@@ -115,11 +130,33 @@ export class FakeDb {
   order = new Model(this);
   orderItem = new Model(this);
   pendingConfirmation = new Model(this, () => ({ consumedAt: null }));
-  stockChangeLog = new Model(this);
+  stockChangeLog = new Model(this, () => ({ reason: "ADJUST", orderId: null }), [["orderId", "productId", "reason"]]);
   auditLog = new Model(this);
   mediaAsset = new Model(this);
   discount = new Model(this);
-  async $transaction(fn: (tx: FakeDb) => Promise<unknown>) {
-    return fn(this); // тесты однопоточные: атомарность не нужна
+  private queue: Promise<unknown> = Promise.resolve();
+  private models(): Model[] {
+    return Object.values(this).filter((v): v is Model => v instanceof Model);
+  }
+  /**
+   * Транзакции выполняются по очереди (как PostgreSQL при блокировке одной и той же строки товара)
+   * и откатываются целиком при исключении: снимок всех таблиц восстанавливается.
+   */
+  async $transaction<T>(fn: (tx: FakeDb) => Promise<T>): Promise<T> {
+    const run = async () => {
+      const snapshot = this.models().map((m) => m.rows.map((r) => ({ ...r })));
+      try {
+        return await fn(this);
+      } catch (err) {
+        this.models().forEach((m, i) => {
+          m.rows.length = 0;
+          m.rows.push(...snapshot[i]);
+        });
+        throw err;
+      }
+    };
+    const result = this.queue.then(run, run);
+    this.queue = result.catch(() => undefined);
+    return result;
   }
 }

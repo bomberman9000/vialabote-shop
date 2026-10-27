@@ -4,8 +4,7 @@ import type { AdminActor } from "../actor";
 import { authorizeAdmin } from "../authorize";
 import { writeAuditLog } from "../audit";
 import { AdminCommandError } from "../errors";
-
-const MAX_STOCK = 100_000;
+import { adjustStock, MAX_STOCK, StockError } from "@/lib/stock/movements";
 
 const setStockSchema = z.object({
   productId: z.string().min(1),
@@ -19,52 +18,39 @@ export interface SetStockMeta {
 }
 
 /**
- * Единственная точка правки остатка из бота (годится и для Web Admin): проверка прав,
- * OCC по version, правка + StockChangeLog + AuditLog в ОДНОЙ транзакции — если журнал
- * не записался (например, миграция ещё не применена), остаток не меняется.
+ * Ручная правка остатка (бот, годится и для Web Admin): проверка прав + adjustStock
+ * (OCC по version, правка + StockChangeLog ADJUST) + AuditLog — всё в ОДНОЙ транзакции.
+ * Если журнал не записался (например, миграция ещё не применена), остаток не меняется.
  */
 export async function setStock(actor: AdminActor, rawInput: unknown, meta: SetStockMeta = {}) {
   await authorizeAdmin(actor);
   const input = setStockSchema.parse(rawInput);
 
-  return prisma.$transaction(async (tx) => {
-    const before = await tx.product.findUnique({ where: { id: input.productId } });
-    if (!before) throw new AdminCommandError("NOT_FOUND", "Товар не найден");
-    if (before.version !== input.expectedVersion) {
-      throw new AdminCommandError(
-        "VERSION_CONFLICT",
-        `Товар изменился после формирования команды (сейчас остаток ${before.stock}). Откройте товар заново.`,
-        { currentVersion: before.version, currentStock: before.stock },
-      );
-    }
-    const updated = await tx.product.updateMany({
-      where: { id: input.productId, version: input.expectedVersion },
-      data: { stock: input.stock, version: { increment: 1 } },
-    });
-    if (updated.count === 0) {
-      throw new AdminCommandError("VERSION_CONFLICT", "Товар изменился параллельно во время записи. Откройте товар заново.");
-    }
-    const after = await tx.product.findUniqueOrThrow({ where: { id: input.productId } });
-    await tx.stockChangeLog.create({
-      data: {
-        productId: before.id,
-        productTitle: before.title,
-        oldStock: before.stock,
-        newStock: after.stock,
-        delta: after.stock - before.stock,
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const { before, after } = await adjustStock(tx, {
+        productId: input.productId,
+        expectedVersion: input.expectedVersion,
+        newStock: input.stock,
         source: actor.source,
         actorUserId: actor.userId,
-        actorTelegramUserId: meta.actorTelegramUserId ?? null,
-        confirmationId: meta.confirmationId ?? null,
-      },
+        actorTelegramUserId: meta.actorTelegramUserId,
+        confirmationId: meta.confirmationId,
+      });
+      await writeAuditLog(tx, actor, {
+        action: "SET_STOCK",
+        entityType: "Product",
+        entityId: before.id,
+        before: { stock: before.stock },
+        after: { stock: after.stock },
+      });
+      return after;
     });
-    await writeAuditLog(tx, actor, {
-      action: "SET_STOCK",
-      entityType: "Product",
-      entityId: before.id,
-      before: { stock: before.stock },
-      after: { stock: after.stock },
-    });
-    return after;
-  });
+  } catch (err) {
+    if (err instanceof StockError) {
+      const code = err.code === "NOT_FOUND" ? "NOT_FOUND" : err.code === "VERSION_CONFLICT" ? "VERSION_CONFLICT" : "VALIDATION";
+      throw new AdminCommandError(code, err.message, err.details);
+    }
+    throw err;
+  }
 }

@@ -32,14 +32,17 @@ export default function PayPage() {
   const [now, setNow] = useState(() => Date.now());
   const skew = useRef(0); // часы покупателя могут спешить: считаем время от сервера
   const cleared = useRef(false);
+  const settled = useRef(false); // итоговый статус — дальше банк не дёргаем
 
   async function load() {
+    if (settled.current) return;
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(number)}/payment`, { cache: "no-store" });
       if (res.status === 404) return setNotFound(true);
       if (!res.ok) return;
       const data = (await res.json()) as PaymentState;
       skew.current = new Date(data.serverNow).getTime() - Date.now();
+      if (data.status !== "AWAITING_PAYMENT") settled.current = true;
       setState(data);
     } catch {
       /* сеть моргнула — следующий опрос повторит */

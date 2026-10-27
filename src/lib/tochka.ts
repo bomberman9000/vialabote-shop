@@ -53,6 +53,9 @@ function scrub(text: string, token: string): string {
 async function call<T>(cfg: TochkaConfig, path: string, init: RequestInit, fetchImpl: FetchLike): Promise<T> {
   const res = await fetchImpl(cfg.apiBase + path, {
     ...init,
+    // Next.js 14 кэширует серверные GET-запросы fetch (Data Cache) — статус оплаты навсегда
+    // застыл бы на первом ответе банка. Ни один запрос к банку кэшировать нельзя.
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${cfg.token}`,
       "Content-Type": "application/json",
@@ -177,7 +180,7 @@ let cachedKey: { jwk: JsonWebKey; at: number } | null = null;
 /** Публичный ключ банка для вебхуков; кэш на 6 часов. */
 export async function getTochkaPublicKey(fetchImpl: FetchLike = fetch, now = Date.now()): Promise<JsonWebKey> {
   if (cachedKey && now - cachedKey.at < 6 * 3600_000) return cachedKey.jwk;
-  const res = await fetchImpl(TOCHKA_PUBLIC_KEY_URL, { signal: AbortSignal.timeout(10_000) });
+  const res = await fetchImpl(TOCHKA_PUBLIC_KEY_URL, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new TochkaError(res.status, "Точка: публичный ключ недоступен");
   const jwk = (await res.json()) as JsonWebKey;
   if (jwk.kty !== "RSA" || !jwk.n || !jwk.e) throw new TochkaError(200, "Точка: неожиданный формат ключа");

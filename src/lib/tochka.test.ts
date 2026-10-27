@@ -85,6 +85,13 @@ describe("getPaymentOperation", () => {
     );
     expect(op).toEqual({ operationId: "7ea23247-9f9a-4efb-a28d-fd346c1f3b51", status: "APPROVED", amountKopecks: 124990 });
   });
+  it("never lets Next.js cache a bank response (payment status must be live)", async () => {
+    const seen: { url?: string; init?: RequestInit }[] = [];
+    await getPaymentOperation(cfg, "7ea23247-9f9a-4efb-a28d-fd346c1f3b51", fakeFetch(200, { Data: { Operation: [{ operationId: "7ea23247-9f9a-4efb-a28d-fd346c1f3b51", status: "CREATED", amount: 1 }] } }), );
+    await createPaymentLink(cfg, { amountKopecks: 100, purpose: "x", successUrl: "a", failUrl: "b" }, fakeFetch(200, { Data: { operationId: "o", paymentLink: "l" } }, seen));
+    await getPaymentOperation(cfg, "7ea23247-9f9a-4efb-a28d-fd346c1f3b51", fakeFetch(200, { Data: { Operation: [{ operationId: "7ea23247-9f9a-4efb-a28d-fd346c1f3b51", status: "CREATED", amount: 1 }] } }, seen));
+    expect(seen.map((s) => s.init?.cache)).toEqual(["no-store", "no-store"]);
+  });
   it("refuses a malformed operationId before calling the bank", async () => {
     const seen: { url?: string }[] = [];
     await expect(getPaymentOperation(cfg, "../../accounts", fakeFetch(200, {}, seen))).rejects.toThrow();

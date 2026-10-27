@@ -98,6 +98,12 @@ export async function POST(req: Request) {
       amountRub: totalAmount / 100,
       returnUrl: `${appUrl}/checkout/success?order=${order.number}`,
       description: `Заказ ${order.number} на Vialabote`,
+      customerEmail: data.customerEmail,
+      receiptItems: orderItems.map((i) => ({
+        description: i.title,
+        quantity: i.quantity,
+        amountKopecks: i.price,
+      })),
     });
 
     const paymentUrl = payment.confirmation?.confirmation_url ?? null;

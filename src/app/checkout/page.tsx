@@ -41,8 +41,15 @@ export default function CheckoutPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError("Не удалось оформить заказ. Проверьте данные и попробуйте снова.");
+        setError(typeof data.error === "string" ? data.error : "Не удалось оформить заказ. Проверьте данные и попробуйте снова.");
         setLoading(false);
+        return;
+      }
+
+      // Онлайн-оплата: корзину не очищаем, пока банк не подтвердит оплату — если время выйдет,
+      // покупатель вернётся в корзину и оформит заново (страница оплаты очистит её после PAID).
+      if (data.payPage) {
+        router.push(data.payPage);
         return;
       }
 

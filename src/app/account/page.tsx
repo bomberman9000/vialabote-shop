@@ -4,6 +4,7 @@ import Link from "next/link";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/money";
+import { SignOutButton } from "@/components/sign-out-button";
 
 const STATUS_LABELS: Record<string, string> = {
   NEW: "Новый",
@@ -40,6 +41,8 @@ export default async function AccountPage() {
             </Link>
           </>
         ) : null}
+        {" "}
+        · <SignOutButton className="text-brand-700 hover:underline" />
       </p>
 
       <div>

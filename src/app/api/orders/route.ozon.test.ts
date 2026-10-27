@@ -239,16 +239,20 @@ describe("POST /api/orders — доставка Ozon", () => {
     expect((await post(body(p.id, pvz, "+7 846 222-33-44"))).status).toBe(400);
   });
 
-  it("курьер без адреса -> 400; с адресом — координаты уходят в checkout", async () => {
+  it("курьер при оформлении закрыт (координаты клиента не сверяются с адресом) — 400, в Ozon и банк не ходим", async () => {
     env();
     const p = await product();
     const fake = world(p, checkoutReply([{ sku: Number(p.ozonSku), quantity: 1 }], { type: "COURIER" }));
     vi.stubGlobal("fetch", fake.fetch);
-    const courier = { provider: "OZON", destination: { type: "COURIER", latitude: 53.2, longitude: 50.15 }, recipient: { lastName: "Иванова", firstName: "Анна" } };
-    expect((await post(body(p.id, courier))).status).toBe(400);
-    const res = await post(body(p.id, { ...courier, courier: { city: "Самара", street: "Мориса Тореза", house: "103" } }));
-    expect(res.status).toBe(200);
-    const order = await prisma.order.findUniqueOrThrow({ where: { id: (await res.json()).orderId } });
-    expect(order.deliveryMethod).toBe("OZON_COURIER");
+    const courier = {
+      provider: "OZON",
+      destination: { type: "COURIER", latitude: 53.2, longitude: 50.15 },
+      recipient: { lastName: "Иванова", firstName: "Анна" },
+      courier: { city: "Самара", street: "Мориса Тореза", house: "103" },
+    };
+    const res = await post(body(p.id, courier));
+    expect(res.status).toBe(400);
+    expect(fake.fetch).not.toHaveBeenCalled();
+    expect(await prisma.order.count({ where: { items: { some: { productId: p.id } } } })).toBe(0);
   });
 });

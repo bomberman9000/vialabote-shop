@@ -16,6 +16,8 @@ export type PanelAction =
   | { op: "photo"; productId: string }
   | { op: "visMenu"; productId: string }
   | { op: "vis"; productId: string; to: Visibility }
+  | { op: "catMenu"; productId: string }
+  | { op: "catSet"; productId: string; categoryId: string }
   | { op: "cancelInput" };
 
 const ID = /^[A-Za-z0-9_-]{1,40}$/;
@@ -40,6 +42,10 @@ export function buildAction(a: PanelAction): string {
       return `a:vm:${a.productId}`;
     case "vis":
       return `a:vs:${a.productId}:${a.to}`;
+    case "catMenu":
+      return `a:cm:${a.productId}`;
+    case "catSet":
+      return `a:cs:${a.productId}:${a.categoryId}`;
     case "cancelInput":
       return "a:ci";
   }
@@ -73,6 +79,10 @@ export function parseAction(data: string): PanelAction | null {
       return a && ID.test(a) ? { op: "visMenu", productId: a } : null;
     case "vs":
       return a && ID.test(a) && b && isVisibility(b) ? { op: "vis", productId: a, to: b } : null;
+    case "cm":
+      return a && ID.test(a) ? { op: "catMenu", productId: a } : null;
+    case "cs":
+      return a && ID.test(a) && b && ID.test(b) ? { op: "catSet", productId: a, categoryId: b } : null;
     case "ci":
       return { op: "cancelInput" };
     default:

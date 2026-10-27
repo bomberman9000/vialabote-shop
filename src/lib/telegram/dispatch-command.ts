@@ -11,6 +11,7 @@ import { isTelegramMutationsEnabled, TELEGRAM_MUTATIONS_DISABLED_MESSAGE } from 
 import { inciMissingText } from "./panel";
 import { isAdminListConfigured, isInAdminList } from "./access";
 import { downloadTelegramFile, TelegramDownloadError } from "./file-download";
+import { FIELD_COLUMN } from "./card-edit";
 import { setPrice, setDiscount, publishProduct, archiveProduct, unpublishToDraft, updateProduct } from "@/lib/admin/commands/product";
 import { setStock } from "@/lib/admin/commands/stock";
 import { attachMedia } from "@/lib/admin/commands/media";
@@ -108,7 +109,6 @@ function deniedByOwnerList(actorTelegramUserId: string): boolean {
   return isAdminListConfigured() && !isInAdminList(actorTelegramUserId);
 }
 
-const CARD_FIELD_COLUMN = { title: "title", desc: "description", inci: "activeIngredients" } as const;
 
 async function runMutationCommand(
   actorTelegramUserId: string,
@@ -131,12 +131,15 @@ async function runMutationCommand(
       return `Остаток «${after.title}» обновлён: теперь ${after.stock} шт. Запись добавлена в журнал.`;
     }
     case "EDIT_FIELD": {
-      const field = String(payload.field) as keyof typeof CARD_FIELD_COLUMN;
-      const column = CARD_FIELD_COLUMN[field];
+      const field = String(payload.field);
+      const column = (FIELD_COLUMN as Record<string, string>)[field];
       if (!column) throw new AdminCommandError("VALIDATION", "Это поле нельзя менять через Telegram");
       await updateProduct(actor, { productId: payload.productId, expectedVersion: payload.expectedVersion, [column]: payload.value });
       return "Карточка обновлена.";
     }
+    case "EDIT_CATEGORY":
+      await updateProduct(actor, { productId: payload.productId, expectedVersion: payload.expectedVersion, categoryId: payload.categoryId });
+      return "Категория обновлена.";
     case "SET_VISIBILITY": {
       const base = { productId: payload.productId, expectedVersion: payload.expectedVersion };
       if (payload.to === "published") await publishProduct(actor, base);

@@ -44,14 +44,26 @@ const button = (body: any, re: RegExp) => {
 let PID = "";
 
 beforeEach(async () => {
-  for (const m of [db.user, db.product, db.order, db.orderItem, db.pendingConfirmation, db.stockChangeLog, db.auditLog]) m.rows.length = 0;
+  for (const m of [db.user, db.category, db.product, db.order, db.orderItem, db.pendingConfirmation, db.stockChangeLog, db.auditLog]) m.rows.length = 0;
   process.env.TELEGRAM_BOT_TOKEN = "123:flows_token_not_real";
   process.env.TELEGRAM_WEBHOOK_SECRET = SECRET;
   process.env.TELEGRAM_ADMIN_IDS = String(OWNER);
   await db.user.create({ data: { id: "u-owner", email: "o@x", role: "ADMIN", telegramUserId: String(OWNER) } });
   await db.user.create({ data: { id: "u-admin2", email: "a@x", role: "ADMIN", telegramUserId: String(DB_ADMIN_NOT_OWNER) } });
+  await db.category.create({ data: { id: "clxcat00000000000000000001", name: "Кремы" } });
+  await db.category.create({ data: { id: "clxcat00000000000000000002", name: "Сыворотки" } });
   const p = await db.product.create({
-    data: { id: "clxprod0000000000000000001", title: "Крем Тест", slug: "krem", price: 219000, stock: 5, status: "published", description: "Описание", imageUrl: "/x.png" },
+    data: {
+      id: "clxprod0000000000000000001",
+      title: "Крем Тест",
+      slug: "krem",
+      price: 219000,
+      stock: 5,
+      status: "published",
+      description: "Описание",
+      imageUrl: "/x.png",
+      categoryId: "clxcat00000000000000000001",
+    },
   });
   PID = p.id;
   await db.order.create({ data: { id: "o1", number: "1001", status: "PAID", totalAmount: 438000, deliveryCity: "Москва", createdAt: new Date() } });
@@ -214,6 +226,58 @@ describe("card editing", () => {
     await press(OWNER, buildAction({ op: "field", productId: PID, field: "desc" }));
     await press(OWNER, button(await say(OWNER, "Новое описание"), /Подтвердить/));
     expect(db.product.rows[0].description).toBe("Новое описание");
+  });
+
+  it("card shows every field and has a button for each editable one", async () => {
+    const card = await press(OWNER, buildAction({ op: "card", productId: PID }));
+    for (const line of ["Категория: Кремы", "Применение: нет", "Предупреждения: нет", "Срок годности: нет", "Производитель: нет", "Публикация: виден на сайте"]) {
+      expect(card.text).toContain(line);
+    }
+    const labels = buttons(card).map((b) => b.text);
+    for (const l of ["📉 Остаток", "💲 Цена", "✏️ Название", "📝 Описание", "🗂 Категория", "🖼 Фото", "🧪 Состав INCI", "🧴 Применение", "⚠️ Предупреждения", "⏳ Срок годности", "🏭 Производитель", "👁 Публикация"]) {
+      expect(labels).toContain(l);
+    }
+    for (const b of buttons(card)) expect(Buffer.byteLength(b.callback_data)).toBeLessThanOrEqual(64);
+  });
+
+  it.each([
+    ["howto", "Нанести утром\nСмыть вечером", "howToUse"],
+    ["warn", "Только наружно", "warnings"],
+    ["shelf", "24 месяца, после вскрытия 12", "shelfLife"],
+    ["maker", "ООО «БОТЭ», Россия", "manufacturer"],
+  ] as const)("%s: prompt -> text -> preview -> confirm -> %s written", async (field, value, column) => {
+    await press(OWNER, buildAction({ op: "field", productId: PID, field }));
+    const preview = await say(OWNER, value);
+    expect(preview.text).toContain(`было: —\nстанет: ${value.split("\n")[0]}`);
+    expect(db.product.rows[0][column]).toBeUndefined();
+    const done = await press(OWNER, button(preview, /Подтвердить/));
+    expect(done.text).toContain("Карточка обновлена");
+    expect(db.product.rows[0][column]).toBe(value);
+  });
+
+  it("optional field can be cleared with «-»; cancel leaves it as is", async () => {
+    db.product.rows[0].manufacturer = "Старый";
+    await press(OWNER, buildAction({ op: "field", productId: PID, field: "maker" }));
+    const preview = await say(OWNER, "-");
+    expect(preview.text).toContain("было: Старый\nстанет: — (очистить)");
+    await press(OWNER, button(preview, /Отмена/));
+    expect(db.product.rows[0].manufacturer).toBe("Старый");
+    await press(OWNER, buildAction({ op: "field", productId: PID, field: "maker" }));
+    await press(OWNER, button(await say(OWNER, "-"), /Подтвердить/));
+    expect(db.product.rows[0].manufacturer).toBe("");
+  });
+
+  it("category: chosen by buttons from existing ones, preview, confirm", async () => {
+    const menu = await press(OWNER, buildAction({ op: "catMenu", productId: PID }));
+    expect(menu.text).toContain("Сейчас: Кремы");
+    expect(buttons(menu).map((b) => b.text)).toEqual(["Сыворотки", "⬅️ К товару"]);
+    const preview = await press(OWNER, button(menu, /Сыворотки/));
+    expect(preview.text).toContain("было: Кремы\nстанет: Сыворотки");
+    expect(db.product.rows[0].categoryId).toBe("clxcat00000000000000000001");
+    await press(OWNER, button(preview, /Подтвердить/));
+    expect(db.product.rows[0].categoryId).toBe("clxcat00000000000000000002");
+    const forged = await press(OWNER, buildAction({ op: "catSet", productId: PID, categoryId: "clxnope0000000000000000001" }));
+    expect(forged).toMatchObject({ method: "answerCallbackQuery", show_alert: true });
   });
 
   it("visibility: published -> draft with preview and confirmation", async () => {

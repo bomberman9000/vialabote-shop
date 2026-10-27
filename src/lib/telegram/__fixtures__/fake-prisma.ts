@@ -62,9 +62,16 @@ class Model {
     /** составные unique-индексы; как в PostgreSQL, строки с NULL в индексе не конфликтуют */
     private uniques: string[][] = [],
   ) {}
-  async findUnique({ where, select: sel }: any) {
+  async findUnique({ where, select: sel, include }: any) {
     const r = this.rows.find((x) => match(x, where));
-    return r ? select(r, sel, this) : null;
+    if (!r) return null;
+    const out = select(r, sel, this);
+    // include: { category: … } — единственная связь, которую читает панель
+    if (include?.category) {
+      const c = this.db.category.rows.find((x) => x.id === r.categoryId);
+      out.category = c ? { name: c.name } : null;
+    }
+    return out;
   }
   async findUniqueOrThrow(args: any) {
     const r = await this.findUnique(args);
@@ -126,6 +133,7 @@ class Model {
 
 export class FakeDb {
   user = new Model(this);
+  category = new Model(this);
   product = new Model(this, () => ({ version: 1, stock: 0, status: "draft", oldPrice: null, activeIngredients: null, description: "" }));
   order = new Model(this);
   orderItem = new Model(this);

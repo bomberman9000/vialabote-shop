@@ -29,6 +29,25 @@ describe("card edit input", () => {
   });
 });
 
+describe("new card fields", () => {
+  it("bounds per field", () => {
+    expect(parseTextField("shelf", "24 месяца").ok).toBe(true);
+    expect(parseTextField("shelf", "x".repeat(101)).ok).toBe(false);
+    expect(parseTextField("maker", "x".repeat(201)).ok).toBe(false);
+    expect(parseTextField("warn", "x").ok).toBe(false);
+    expect(parseTextField("howto", "Шаг 1\nШаг 2")).toEqual({ ok: true, value: "Шаг 1\nШаг 2" });
+  });
+  it("«-» clears optional fields only", () => {
+    for (const f of ["inci", "howto", "warn", "shelf", "maker"] as const) expect(parseTextField(f, " - ")).toEqual({ ok: true, value: "" });
+    expect(parseTextField("title", "-").ok).toBe(false);
+    expect(parsePriceRubles("-").ok).toBe(false);
+  });
+  it("preview of a new field and of clearing", () => {
+    expect(cardPreview("shelf", { ...product, shelfLife: null }, "24 месяца", money)).toContain("было: —\nстанет: 24 месяца");
+    expect(cardPreview("maker", { ...product, manufacturer: "БОТЭ" }, "", money)).toContain("было: БОТЭ\nстанет: — (очистить)");
+  });
+});
+
 describe("card previews", () => {
   it("shows was -> will be", () => {
     expect(cardPreview("price", product, 250000, money)).toContain("было: 2190 ₽\nстанет: 2500 ₽");

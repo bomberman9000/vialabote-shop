@@ -8,7 +8,7 @@ import { canTransition, isProductStatus } from "@/lib/admin/product-lifecycle";
 import { buildAction, type PanelAction } from "./callbacks";
 import { createPendingConfirmation } from "./confirmation-service";
 import { cancelInputs, openInput } from "./input-session";
-import { FIELD_LABEL, FIELD_PROMPT, VISIBILITY, VISIBILITY_RU, visibilityPreview } from "./card-edit";
+import { categoryPreview, FIELD_LABEL, FIELD_PROMPT, VISIBILITY, VISIBILITY_RU, visibilityPreview, type TextField } from "./card-edit";
 import { applyStep, STOCK_STEPS, stockEditorText, stockPreview } from "./stock";
 import { menuScreen, statsScreen, cb, type InlineKeyboard, type PanelScreen } from "./panel";
 
@@ -29,35 +29,43 @@ async function loadProduct(id: string) {
   return prisma.product.findUnique({ where: { id } });
 }
 
+const filled = (v: string | null | undefined) => (v?.trim() ? "заполнено" : "нет");
+const short = (v: string | null | undefined, n = 80) => {
+  const t = v?.trim() ?? "";
+  return t ? `${t.slice(0, n)}${t.length > n ? "…" : ""}` : "нет";
+};
+
 async function cardScreen(productId: string, canWrite: boolean): Promise<ActionResult> {
-  const p = await loadProduct(productId);
+  const p = await prisma.product.findUnique({ where: { id: productId }, include: { category: { select: { name: true } } } });
   if (!p) return GONE;
   const status = (VISIBILITY_RU as Record<string, string>)[p.status] ?? p.status;
   const text = [
     `📦 ${p.title}`,
     `Цена: ${formatPrice(p.price)}${p.oldPrice ? ` (старая ${formatPrice(p.oldPrice)})` : ""}`,
     `Остаток: ${p.stock} шт.`,
-    `Видимость: ${status}`,
-    `Состав INCI: ${p.activeIngredients?.trim() ? "заполнен" : "нет"}`,
-    `Описание: ${p.description.trim() ? `${p.description.trim().slice(0, 160)}${p.description.trim().length > 160 ? "…" : ""}` : "нет"}`,
+    `Категория: ${p.category?.name ?? "—"}`,
+    `Публикация: ${status}`,
+    `Описание: ${short(p.description, 160)}`,
+    `Состав INCI: ${filled(p.activeIngredients)}`,
+    `Применение: ${filled(p.howToUse)}`,
+    `Предупреждения: ${filled(p.warnings)}`,
+    `Срок годности: ${short(p.shelfLife)}`,
+    `Производитель: ${short(p.manufacturer)}`,
     ...(canWrite ? [] : ["", "Режим просмотра: правки отключены."]),
   ].join("\n");
   const keyboard: InlineKeyboard = [];
   if (canWrite) {
+    const f = (field: TextField, label: string) => ({
+      text: label,
+      callback_data: buildAction({ op: "field", productId, field }),
+    });
     keyboard.push(
-      [
-        { text: "📉 Остаток", callback_data: buildAction({ op: "stockEdit", productId, draft: p.stock }) },
-        { text: "💲 Цена", callback_data: buildAction({ op: "field", productId, field: "price" }) },
-      ],
-      [
-        { text: "✏️ Название", callback_data: buildAction({ op: "field", productId, field: "title" }) },
-        { text: "📝 Описание", callback_data: buildAction({ op: "field", productId, field: "desc" }) },
-      ],
-      [
-        { text: "🧪 Состав INCI", callback_data: buildAction({ op: "field", productId, field: "inci" }) },
-        { text: "🖼 Фото", callback_data: buildAction({ op: "photo", productId }) },
-      ],
-      [{ text: "👁 Видимость на сайте", callback_data: buildAction({ op: "visMenu", productId }) }],
+      [{ text: "📉 Остаток", callback_data: buildAction({ op: "stockEdit", productId, draft: p.stock }) }, f("price", "💲 Цена")],
+      [f("title", "✏️ Название"), f("desc", "📝 Описание")],
+      [{ text: "🗂 Категория", callback_data: buildAction({ op: "catMenu", productId }) }, { text: "🖼 Фото", callback_data: buildAction({ op: "photo", productId }) }],
+      [f("inci", "🧪 Состав INCI"), f("howto", "🧴 Применение")],
+      [f("warn", "⚠️ Предупреждения"), f("shelf", "⏳ Срок годности")],
+      [f("maker", "🏭 Производитель"), { text: "👁 Публикация", callback_data: buildAction({ op: "visMenu", productId }) }],
     );
   }
   keyboard.push([
@@ -156,6 +164,32 @@ export async function handleAction(action: PanelAction, ctx: { telegramUserId: s
           cardBtn(p.id),
         ],
       };
+    }
+    case "catMenu": {
+      const p = await prisma.product.findUnique({ where: { id: action.productId }, include: { category: { select: { name: true } } } });
+      if (!p) return GONE;
+      const cats = await prisma.category.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" }, take: 40 });
+      const others = cats.filter((c) => c.id !== p.categoryId);
+      return {
+        text: `🗂 ${p.title}\nСейчас: ${p.category?.name ?? "—"}\n\n${others.length ? "Выберите новую категорию:" : "Других категорий нет — создайте её в Web Admin."}`,
+        keyboard: [...others.map((c) => [{ text: c.name, callback_data: buildAction({ op: "catSet", productId: p.id, categoryId: c.id }) }]), cardBtn(p.id)],
+      };
+    }
+    case "catSet": {
+      const p = await prisma.product.findUnique({ where: { id: action.productId }, include: { category: { select: { name: true } } } });
+      if (!p) return GONE;
+      const target = await prisma.category.findUnique({ where: { id: action.categoryId } });
+      if (!target) return { toast: "Категория не найдена — откройте список заново." };
+      if (target.id === p.categoryId) return { toast: "Товар уже в этой категории." };
+      const c = await createPendingConfirmation({
+        actorTelegramUserId: telegramUserId,
+        commandType: "EDIT_CATEGORY",
+        entityType: "Product",
+        entityId: p.id,
+        expectedEntityVersion: p.version,
+        payload: { categoryId: target.id },
+      });
+      return { text: `${categoryPreview(p.title, p.category?.name ?? "—", target.name)}\n\nПодтвердить?`, keyboard: confirmKeyboard(c.id) };
     }
     case "vis": {
       const p = await loadProduct(action.productId);

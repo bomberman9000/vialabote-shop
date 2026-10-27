@@ -6,8 +6,8 @@
 // невыкупа ставится refundState = "REQUIRED" — возврат делается вручную (следующий шаг — refund Точки).
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { OzonError, toOzonMoney, type FbsPosting, type OrderCreateRequest, type OzonReturn } from "./ozon";
-import { getOzon, quoteCart, type Ozon, type OzonDestination } from "./ozon-service";
+import { OzonError, toOzonMoney, type ChosenSplit, type FbsPosting, type OrderCreateRequest, type OzonConfig, type OzonReturn } from "./ozon";
+import { getProdOzon, quoteCart, type Ozon, type OzonDestination } from "./ozon-service";
 
 export interface OzonRecipient {
   lastName: string;
@@ -59,11 +59,70 @@ async function finish(id: string, state: string, lastError: string | null, extra
 }
 
 /**
+ * Тело /v2/order/create из сохранённого при оформлении запроса и свежего расчёта (summarizeCheckout).
+ * Одно и то же для боевого заказа и прогона в песочнице (scripts/ozon/sandbox-e2e.ts).
+ */
+export function buildOrderCreateBody(
+  request: OzonOrderRequest,
+  splits: ChosenSplit[],
+  opts: { deliverySchema: OzonConfig["deliverySchema"]; deliveryPriceKopecks?: number | null; priceBySku: Map<number, number> },
+): OrderCreateRequest {
+  const r = request.recipient;
+  return {
+    buyer: { first_name: r.firstName, last_name: r.lastName, ...(r.middleName ? { middle_name: r.middleName } : {}), phone: r.phone },
+    recipient: {
+      recipient_first_name: r.firstName,
+      recipient_last_name: r.lastName,
+      ...(r.middleName ? { recipient_middle_name: r.middleName } : {}),
+      recipient_phone: r.phone,
+    },
+    delivery:
+      request.destination.type === "PVZ"
+        ? { pick_up: { map_point_id: Number(request.destination.mapPointId) } }
+        : {
+            courier: {
+              city: request.courier!.city,
+              country: "Россия",
+              house_number: request.courier!.house,
+              coordinates: { latitude: request.destination.latitude, longitude: request.destination.longitude },
+              ...(request.courier!.street ? { street: request.courier!.street } : {}),
+              ...(request.courier!.apartment ? { apartment: request.courier!.apartment } : {}),
+              ...(request.courier!.entrance ? { entrance: request.courier!.entrance } : {}),
+              ...(request.courier!.floor ? { floor: request.courier!.floor } : {}),
+              ...(request.courier!.intercom ? { intercom: request.courier!.intercom } : {}),
+              ...(request.courier!.region ? { region: request.courier!.region } : {}),
+              ...(request.courier!.zip ? { zip_code: request.courier!.zip } : {}),
+              ...(request.courier!.comment ? { comment: request.courier!.comment } : {}),
+            },
+          },
+    delivery_schema: opts.deliverySchema,
+    splits: splits.map((s, idx) => ({
+      delivery_method: {
+        delivery_method_id: s.deliveryMethodId,
+        delivery_type: s.deliveryType,
+        logistic_date_range: s.logisticDateRange,
+        timeslot_id: s.timeslotId,
+        // Покупатель заплатил за доставку при оформлении; показываем эту сумму в первом отправлении.
+        // Без объекта Ozon покажет покупателю «бесплатно».
+        ...(idx === 0 && opts.deliveryPriceKopecks ? { price: toOzonMoney(opts.deliveryPriceKopecks) } : {}),
+      },
+      items: s.items.map((i) => ({
+        sku: i.sku,
+        ...(i.offerId ? { offer_id: i.offerId } : {}),
+        quantity: i.quantity,
+        price: toOzonMoney(opts.priceBySku.get(i.sku) ?? 0),
+      })),
+      warehouse_id: s.warehouseId,
+    })),
+  };
+}
+
+/**
  * Создать заказ в Ozon для ОПЛАЧЕННОГО заказа сайта. Идемпотентно: заказ берётся в работу атомарным
  * переходом PENDING -> CREATING, поэтому повтор вебхука или параллельный опрос второй заказ не создадут.
  * Никогда не бросает: результат — в OzonOrder.state.
  */
-export async function createOzonOrderForPaid(orderId: string, ozon: Ozon | null = getOzon()): Promise<CreateResult> {
+export async function createOzonOrderForPaid(orderId: string, ozon: Ozon | null = getProdOzon()): Promise<CreateResult> {
   if (!ozon) return { done: false, state: "DISABLED", reason: "Ozon Доставка выключена" };
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -106,54 +165,11 @@ export async function createOzonOrderForPaid(orderId: string, ozon: Ozon | null 
     }
     const priceBySku = new Map<number, number>();
     for (const i of order.items) if (i.product.ozonSku) priceBySku.set(Number(i.product.ozonSku), i.price);
-    const r = request.recipient;
-    body = {
-      buyer: { first_name: r.firstName, last_name: r.lastName, ...(r.middleName ? { middle_name: r.middleName } : {}), phone: r.phone },
-      recipient: {
-        recipient_first_name: r.firstName,
-        recipient_last_name: r.lastName,
-        ...(r.middleName ? { recipient_middle_name: r.middleName } : {}),
-        recipient_phone: r.phone,
-      },
-      delivery:
-        request.destination.type === "PVZ"
-          ? { pick_up: { map_point_id: Number(request.destination.mapPointId) } }
-          : {
-              courier: {
-                city: request.courier!.city,
-                country: "Россия",
-                house_number: request.courier!.house,
-                coordinates: { latitude: request.destination.latitude, longitude: request.destination.longitude },
-                ...(request.courier!.street ? { street: request.courier!.street } : {}),
-                ...(request.courier!.apartment ? { apartment: request.courier!.apartment } : {}),
-                ...(request.courier!.entrance ? { entrance: request.courier!.entrance } : {}),
-                ...(request.courier!.floor ? { floor: request.courier!.floor } : {}),
-                ...(request.courier!.intercom ? { intercom: request.courier!.intercom } : {}),
-                ...(request.courier!.region ? { region: request.courier!.region } : {}),
-                ...(request.courier!.zip ? { zip_code: request.courier!.zip } : {}),
-                ...(request.courier!.comment ? { comment: request.courier!.comment } : {}),
-              },
-            },
-      delivery_schema: ozon.cfg.deliverySchema,
-      splits: quote.splits.map((s, idx) => ({
-        delivery_method: {
-          delivery_method_id: s.deliveryMethodId,
-          delivery_type: s.deliveryType,
-          logistic_date_range: s.logisticDateRange,
-          timeslot_id: s.timeslotId,
-          // Покупатель заплатил за доставку при оформлении; показываем эту сумму в первом отправлении.
-          // Без объекта Ozon покажет покупателю «бесплатно».
-          ...(idx === 0 && order.deliveryPrice ? { price: toOzonMoney(order.deliveryPrice) } : {}),
-        },
-        items: s.items.map((i) => ({
-          sku: i.sku,
-          ...(i.offerId ? { offer_id: i.offerId } : {}),
-          quantity: i.quantity,
-          price: toOzonMoney(priceBySku.get(i.sku) ?? 0),
-        })),
-        warehouse_id: s.warehouseId,
-      })),
-    };
+    body = buildOrderCreateBody(request, quote.splits, {
+      deliverySchema: ozon.cfg.deliverySchema,
+      deliveryPriceKopecks: order.deliveryPrice,
+      priceBySku,
+    });
   } catch (err) {
     return retryLater(errText(err), !is429(err));
   }
@@ -329,7 +345,7 @@ export async function syncOzonOrder(ozonOrderId: string, ozon: Ozon): Promise<vo
  * обновить статусы. Вебхуки Ozon не регистрируются — источник истины этот опрос.
  */
 export async function syncOzonOrders(
-  ozon: Ozon | null = getOzon(),
+  ozon: Ozon | null = getProdOzon(),
   { limit = 100, orderIds }: { limit?: number; orderIds?: string[] } = {},
 ): Promise<SyncReport> {
   const report: SyncReport = { created: 0, synced: 0, stale: 0, errors: [] };
@@ -398,7 +414,7 @@ export type CancelResult =
 export async function cancelOzonOrder(
   orderId: string,
   { reasonId, message }: { reasonId?: number; message?: string } = {},
-  ozon: Ozon | null = getOzon(),
+  ozon: Ozon | null = getProdOzon(),
 ): Promise<CancelResult> {
   const oo = await prisma.ozonOrder.findUnique({ where: { orderId } });
   if (!oo) return { ok: false, reason: "заказ без доставки Ozon" };

@@ -86,6 +86,48 @@ describe.skipIf(!HAS_DB)("OzonOAuthToken (PostgreSQL)", () => {
     const s2 = createTokenStore(cfg(), { prisma, fetch: online.fetch as unknown as typeof fetch, rowId: row("online") });
     await expect(s2.exchangeCode("CODE-2")).rejects.toThrow(/access_type=offline/);
   });
+
+  it("песочница: client_credentials формой на хост песочницы, токен из БД до истечения, потом новый", async () => {
+    const id = row("sandbox");
+    let n = 0;
+    const fake = fakeFetch({ "/oauth/token": () => ({ body: { access_token: `SB-${++n}`, expires_in: 3600 } }) });
+    let t = Date.now();
+    const sb = { ...testConfig, env: "sandbox" as const, base: "https://sandbox.test", oauthBase: "https://sandbox.test", app: { clientId: "app", clientSecret: "sb-SECRET" } };
+    const store = createTokenStore(sb, { prisma, fetch: fake.fetch as unknown as typeof fetch, rowId: id, now: () => t });
+    expect(await store.getAccessToken()).toBe("SB-1");
+    const [call] = fake.calls;
+    expect(String(fake.fetch.mock.calls[0][0])).toBe("https://sandbox.test/oauth/token");
+    expect(call.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
+    expect(call.body).toEqual({ client_id: "app", client_secret: "sb-SECRET", grant_type: "client_credentials" });
+    // другой процесс: токен берётся из БД, без запроса
+    const other = createTokenStore(sb, { prisma, fetch: fake.fetch as unknown as typeof fetch, rowId: id, now: () => t });
+    expect(await other.getAccessToken()).toBe("SB-1");
+    expect(fake.count("/oauth/token")).toBe(1);
+    t += 3600_000;
+    expect(await other.getAccessToken()).toBe("SB-2");
+    const saved = await prisma.ozonOAuthToken.findUniqueOrThrow({ where: { id } });
+    expect(saved).toMatchObject({ accessToken: "SB-2", refreshToken: "" });
+  });
+
+  it("песочница: форму не приняли (415) — один повтор JSON", async () => {
+    const fake = fakeFetch({
+      "/oauth/token": (_b, n) => (n === 1 ? { status: 415, body: { message: "unsupported" } } : { body: { access_token: "SB-J", expires_in: 3600 } }),
+    });
+    const sb = { ...testConfig, env: "sandbox" as const, app: { clientId: "app", clientSecret: "sb" } };
+    const store = createTokenStore(sb, { prisma, fetch: fake.fetch as unknown as typeof fetch, rowId: row("sandbox-json") });
+    expect(await store.getAccessToken()).toBe("SB-J");
+    expect(fake.calls.map((c) => c.headers["Content-Type"])).toEqual(["application/x-www-form-urlencoded", "application/json"]);
+  });
+
+  it("по умолчанию строки разные: боевой 'seller', песочница 'sandbox' — смена OZON_ENV не подменит токен", async () => {
+    const fake = fakeFetch({ "/oauth/token": () => ({ body: { access_token: "SB-ROW", expires_in: 3600 } }) });
+    const sb = { ...testConfig, env: "sandbox" as const, app: { clientId: "app", clientSecret: "sb" } };
+    const before = await prisma.ozonOAuthToken.findUnique({ where: { id: "seller" } });
+    await createTokenStore(sb, { prisma, fetch: fake.fetch as unknown as typeof fetch }).getAccessToken();
+    expect((await prisma.ozonOAuthToken.findUniqueOrThrow({ where: { id: "sandbox" } })).accessToken).toBe("SB-ROW");
+    expect(await prisma.ozonOAuthToken.findUnique({ where: { id: "seller" } })).toEqual(before);
+    rows.push("sandbox");
+  });
 });
 
 vi.restoreAllMocks();

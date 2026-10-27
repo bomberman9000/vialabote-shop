@@ -83,7 +83,7 @@ function jwtPayload(token: string): Record<string, unknown> | null {
 }
 
 async function main() {
-  const cfg = ozonConfig();
+  const cfg = ozonConfig({ ...process.env, OZON_ENV: "prod" }); // проверка боевого приложения; песочница — sandbox-e2e.ts
   const vars = ["OZON_CLIENT_ID", "OZON_API_KEY", "OZON_APP_CLIENT_ID", "OZON_APP_CLIENT_SECRET", "OZON_APP_REFRESH_TOKEN", "OZON_APP_REDIRECT_URI"];
   console.log("== Окружение (значения не печатаются)");
   for (const v of vars) console.log(`  ${process.env[v]?.trim() ? "✓" : "·"} ${v}`);
@@ -94,7 +94,7 @@ async function main() {
 
   if (cfg?.apiKey || (process.env.OZON_CLIENT_ID && process.env.OZON_API_KEY)) {
     console.log("\n== Api-Key: роли и срок (/v1/roles)");
-    const keyCfg = cfg ?? { ...ozonConfig({ ...process.env, OZON_APP_CLIENT_ID: "x", OZON_APP_CLIENT_SECRET: "x" })! };
+    const keyCfg = cfg ?? { ...ozonConfig({ ...process.env, OZON_ENV: "prod", OZON_APP_CLIENT_ID: "x", OZON_APP_CLIENT_SECRET: "x" })! };
     const keyClient = createOzonClient(keyCfg, { fetch: guardedFetch, getAccessToken: async () => "" });
     const roles = await step("roles", () => keyClient.roles());
     if (roles) {

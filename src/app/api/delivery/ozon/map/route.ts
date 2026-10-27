@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getOzon, mapClusters } from "@/lib/delivery/ozon-service";
+import { getCheckoutOzon, mapClusters } from "@/lib/delivery/ozon-service";
 import { disabled, limited, ozonFailure, tooMany } from "@/lib/delivery/ozon-http";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ const schema = z.object({ viewport: z.object({ left_bottom: point, right_top: po
 
 /** Кластеры ПВЗ для области карты (v1/delivery/map), кеш 10 минут по округлённой области. */
 export async function POST(req: Request) {
-  const ozon = getOzon();
+  const ozon = getCheckoutOzon();
   if (!ozon) return disabled();
   if (limited(req, "map", 60)) return tooMany();
   const parsed = schema.safeParse(await req.json().catch(() => null));

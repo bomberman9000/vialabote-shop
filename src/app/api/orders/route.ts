@@ -11,7 +11,7 @@ import { createPaymentLink, getTochkaConfig } from "@/lib/tochka";
 import { cancelUnpaidOrder, placeOnlineOrder } from "@/lib/payments/online-order";
 import { reserveForOrder, StockError } from "@/lib/stock/movements";
 import { normalizeRuPhone, OzonError } from "@/lib/delivery/ozon";
-import { allowRequest, checkBuyer, getOzon, isLimited, quoteCart, recordHit } from "@/lib/delivery/ozon-service";
+import { allowRequest, checkBuyer, getCheckoutOzon, isLimited, quoteCart, recordHit } from "@/lib/delivery/ozon-service";
 import { ozonDeliverySchema } from "@/lib/delivery/ozon-http";
 import type { OzonOrderRequest } from "@/lib/delivery/ozon-orders";
 
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
   // поэтому цифрам из браузера не верим. Наложенного платежа у Ozon нет — только с онлайн-оплатой.
   let ozonDelivery: { price: number; maxDate: Date; method: string; request: OzonOrderRequest; quote: unknown } | null = null;
   if (data.delivery) {
-    const ozon = getOzon();
+    const ozon = getCheckoutOzon();
     if (!ozon || !tochka) {
       return NextResponse.json({ error: "Доставка Ozon сейчас недоступна" }, { status: 400 });
     }

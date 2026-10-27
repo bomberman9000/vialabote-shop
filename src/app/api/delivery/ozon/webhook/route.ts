@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { allowRequest, getOzon } from "@/lib/delivery/ozon-service";
+import { allowRequest, getProdOzon } from "@/lib/delivery/ozon-service";
 import { syncOzonOrder } from "@/lib/delivery/ozon-orders";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ const SYNC_THROTTLE_MS = 2 * 60_000;
 // из него берётся лишь номер отправления как подсказка «проверь», а статус запрашивается у Ozon
 // (posting/fbs/get). Подделка может только вызвать лишнюю проверку известного нам заказа.
 export async function POST(req: Request) {
-  const ozon = getOzon();
+  const ozon = getProdOzon();
   if (!ozon) return NextResponse.json({ ok: false, error: "disabled" }, { status: 503 });
 
   const body = (await req.json().catch(() => null)) as { message_type?: unknown; posting_number?: unknown } | null;

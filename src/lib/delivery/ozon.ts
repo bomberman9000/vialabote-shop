@@ -12,6 +12,9 @@
 
 const DEFAULT_BASE = "https://api-seller.ozon.ru";
 const DEFAULT_OAUTH_BASE = "https://xapi.ozon.ru";
+// Песочница Ozon Доставки (docs.ozon.ru/api/sandbox): изолированная среда, заказы не настоящие.
+// Тот же хост для токена (client_credentials) и для методов; client_id общий, client_secret свой.
+export const SANDBOX_BASE = "https://api-seller-sandbox.ozon.ru";
 const MAX_RPS = 50;
 const TIMEOUT_MS = 15_000;
 const MAX_429_RETRIES = 3;
@@ -20,6 +23,8 @@ const MAX_RETRY_AFTER_MS = 30_000;
 export type OzonDeliverySchema = "FBS" | "FBO" | "MIX";
 
 export interface OzonConfig {
+  /** prod — боевой Seller API; sandbox — песочница (OZON_ENV=sandbox), витрина её не использует никогда */
+  env: "prod" | "sandbox";
   base: string;
   oauthBase: string;
   /** Seller API: Client-Id + Api-Key (необязательно — без них базовые методы идут с OAuth-токеном) */
@@ -31,18 +36,24 @@ export interface OzonConfig {
   rps: number;
 }
 
-/** null — Ozon Доставка выключена: нет учётных данных частного приложения, сайт работает как раньше. */
+/**
+ * null — Ozon Доставка выключена: нет учётных данных частного приложения, сайт работает как раньше.
+ * OZON_ENV=sandbox — песочница: секрет OZON_APP_CLIENT_SECRET_SANDBOX, хост api-seller-sandbox.ozon.ru,
+ * токен по client_credentials, Api-Key не используется.
+ */
 export function ozonConfig(env: NodeJS.ProcessEnv = process.env): OzonConfig | null {
+  const mode = env.OZON_ENV?.trim().toLowerCase() === "sandbox" ? "sandbox" : "prod";
   const clientId = env.OZON_APP_CLIENT_ID?.trim();
-  const clientSecret = env.OZON_APP_CLIENT_SECRET?.trim();
+  const clientSecret = (mode === "sandbox" ? env.OZON_APP_CLIENT_SECRET_SANDBOX : env.OZON_APP_CLIENT_SECRET)?.trim();
   if (!clientId || !clientSecret) return null;
-  const sellerClientId = env.OZON_CLIENT_ID?.trim() || undefined;
-  const apiKey = env.OZON_API_KEY?.trim() || undefined;
+  const sellerClientId = mode === "prod" ? env.OZON_CLIENT_ID?.trim() || undefined : undefined;
+  const apiKey = mode === "prod" ? env.OZON_API_KEY?.trim() || undefined : undefined;
   const schema = env.OZON_DELIVERY_SCHEMA?.trim().toUpperCase();
   const rps = Number(env.OZON_RPS);
   return {
-    base: (env.OZON_API_BASE?.trim() || DEFAULT_BASE).replace(/\/+$/, ""),
-    oauthBase: (env.OZON_OAUTH_BASE?.trim() || DEFAULT_OAUTH_BASE).replace(/\/+$/, ""),
+    env: mode,
+    base: mode === "sandbox" ? SANDBOX_BASE : (env.OZON_API_BASE?.trim() || DEFAULT_BASE).replace(/\/+$/, ""),
+    oauthBase: mode === "sandbox" ? SANDBOX_BASE : (env.OZON_OAUTH_BASE?.trim() || DEFAULT_OAUTH_BASE).replace(/\/+$/, ""),
     // Ключ без Client-Id (или наоборот) бесполезен — тогда базовые методы тоже через OAuth.
     ...(sellerClientId && apiKey ? { sellerClientId, apiKey } : {}),
     app: {

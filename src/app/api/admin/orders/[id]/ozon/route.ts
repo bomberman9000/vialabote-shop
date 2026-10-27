@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getWebAdminActor } from "@/lib/admin/api-response";
-import { getOzon } from "@/lib/delivery/ozon-service";
+import { getProdOzon } from "@/lib/delivery/ozon-service";
 import { cancelOzonOrder, retryOzonOrder, syncOzonOrder } from "@/lib/delivery/ozon-orders";
 
 const schema = z.discriminatedUnion("action", [
@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (a.action === "retry") return NextResponse.json(await retryOzonOrder(params.id, { confirmNotInOzon: a.confirmNotInOzon }));
   if (a.action === "cancel") return NextResponse.json(await cancelOzonOrder(params.id, { reasonId: a.reasonId, message: a.message }));
 
-  const ozon = getOzon();
+  const ozon = getProdOzon();
   if (!ozon) return NextResponse.json({ error: "Ozon Доставка выключена" }, { status: 503 });
   try {
     await syncOzonOrder(oo.id, ozon);

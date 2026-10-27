@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getOzon, nearestPoints, pointsInViewport } from "@/lib/delivery/ozon-service";
+import { getCheckoutOzon, nearestPoints, pointsInViewport } from "@/lib/delivery/ozon-service";
 import { disabled, limited, ozonFailure, tooMany } from "@/lib/delivery/ozon-http";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ const box = z.object({ minLat: lat, minLong: long, maxLat: lat, maxLong: long, l
  * Адреса и часы работы — /api/delivery/ozon/points/info.
  */
 export async function GET(req: Request) {
-  const ozon = getOzon();
+  const ozon = getCheckoutOzon();
   if (!ozon) return disabled();
   if (limited(req, "points", 60)) return tooMany();
   const q = Object.fromEntries(new URL(req.url).searchParams);

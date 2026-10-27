@@ -24,14 +24,20 @@ export interface TokenDeps {
 }
 
 async function requestToken(cfg: OzonConfig, body: Record<string, string>, doFetch: typeof fetch): Promise<TokenResponse> {
-  let res: Response;
-  try {
-    res = await doFetch(`${cfg.oauthBase}/oauth/token`, {
+  const fields = { client_id: cfg.app.clientId, client_secret: cfg.app.clientSecret, ...body };
+  // Песочница: статья Ozon показывает x-www-form-urlencoded (стандарт OAuth), swagger — JSON. Шлём форму,
+  // при отказе в формате (400/415) — один раз JSON. Боевой xapi.ozon.ru — JSON (docs.ozon.ru/api/applications).
+  const send = (form: boolean) =>
+    doFetch(`${cfg.oauthBase}/oauth/token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ client_id: cfg.app.clientId, client_secret: cfg.app.clientSecret, ...body }),
+      headers: { "Content-Type": form ? "application/x-www-form-urlencoded" : "application/json", Accept: "application/json" },
+      body: form ? new URLSearchParams(fields).toString() : JSON.stringify(fields),
       signal: AbortSignal.timeout(15_000),
     });
+  let res: Response;
+  try {
+    res = await send(cfg.env === "sandbox");
+    if (cfg.env === "sandbox" && (res.status === 400 || res.status === 415)) res = await send(false);
   } catch {
     throw new OzonError("/oauth/token", 0, undefined, "network");
   }
@@ -53,13 +59,15 @@ function scopeText(scope: TokenResponse["scope"]): string | null {
 export function createTokenStore(cfg: OzonConfig, deps: TokenDeps) {
   const doFetch = deps.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   const now = deps.now ?? Date.now;
-  const ROW_ID = deps.rowId ?? DEFAULT_ROW_ID;
+  // Токен песочницы хранится отдельно от боевого: смена OZON_ENV не подсунет один вместо другого.
+  const ROW_ID = deps.rowId ?? (cfg.env === "sandbox" ? "sandbox" : DEFAULT_ROW_ID);
   let cached: { token: string; expiresAt: number } | null = null;
   let inflight: Promise<string> | null = null;
 
   const fresh = (expiresAt: number | null | undefined) => typeof expiresAt === "number" && expiresAt - EARLY_REFRESH_MS > now();
 
   async function refreshLocked(force: boolean): Promise<string> {
+    if (cfg.env === "sandbox") return sandboxLocked(force);
     return deps.prisma.$transaction(
       async (tx) => {
         if (cfg.app.refreshToken) {
@@ -86,6 +94,28 @@ export function createTokenStore(cfg: OzonConfig, deps: TokenDeps) {
             scope: scopeText(t.scope),
           },
         });
+        cached = { token: t.access_token!, expiresAt: expiresAt.getTime() };
+        return t.access_token!;
+      },
+      { timeout: 30_000, maxWait: 30_000 },
+    );
+  }
+
+  /** Песочница: client_credentials, без refresh_token — новый токен по истечении. Та же блокировка строки. */
+  async function sandboxLocked(force: boolean): Promise<string> {
+    return deps.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`INSERT INTO "OzonOAuthToken" ("id", "refreshToken", "updatedAt") VALUES (${ROW_ID}, '', NOW()) ON CONFLICT ("id") DO NOTHING`;
+        const rows = await tx.$queryRaw<{ accessToken: string | null; expiresAt: Date | null }[]>`
+          SELECT "accessToken", "expiresAt" FROM "OzonOAuthToken" WHERE "id" = ${ROW_ID} FOR UPDATE`;
+        const row = rows[0];
+        if (!force && row?.accessToken && fresh(row.expiresAt?.getTime())) {
+          cached = { token: row.accessToken, expiresAt: row.expiresAt!.getTime() };
+          return row.accessToken;
+        }
+        const t = await requestToken(cfg, { grant_type: "client_credentials" }, doFetch);
+        const expiresAt = new Date(now() + Math.max(60, Number(t.expires_in) || 3600) * 1000);
+        await tx.ozonOAuthToken.update({ where: { id: ROW_ID }, data: { accessToken: t.access_token!, expiresAt, scope: scopeText(t.scope) } });
         cached = { token: t.access_token!, expiresAt: expiresAt.getTime() };
         return t.access_token!;
       },

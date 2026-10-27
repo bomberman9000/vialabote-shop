@@ -22,6 +22,7 @@ let seq = 0;
 function env(on: { ozon?: boolean; tochka?: boolean } = {}) {
   vi.stubEnv("OZON_APP_CLIENT_ID", on.ozon === false ? "" : "app");
   vi.stubEnv("OZON_APP_CLIENT_SECRET", on.ozon === false ? "" : "secret");
+  vi.stubEnv("OZON_CHECKOUT_ENABLED", "1");
   vi.stubEnv("OZON_CLIENT_ID", "100001");
   vi.stubEnv("OZON_API_KEY", "key");
   vi.stubEnv("TOCHKA_API_TOKEN", on.tochka === false ? "" : "tochka-token");

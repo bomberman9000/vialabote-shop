@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getOzon, quoteCart } from "@/lib/delivery/ozon-service";
+import { getCheckoutOzon, quoteCart } from "@/lib/delivery/ozon-service";
 import { destinationSchema, disabled, limited, ozonFailure, tooMany } from "@/lib/delivery/ozon-http";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ const schema = z.object({
  * только при оформлении (проверка аккаунта Ozon для номера из заказа).
  */
 export async function POST(req: Request) {
-  const ozon = getOzon();
+  const ozon = getCheckoutOzon();
   if (!ozon) return disabled();
   if (limited(req, "quote", 30)) return tooMany();
   const parsed = schema.safeParse(await req.json().catch(() => null));

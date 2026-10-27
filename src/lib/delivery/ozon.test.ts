@@ -7,6 +7,7 @@ import {
   normalizeRuPhone,
   OzonError,
   ozonConfig,
+  SANDBOX_BASE,
   Pacer,
   parseRetryAfter,
   requiresOAuth,
@@ -19,6 +20,7 @@ import {
 const API_KEY = "api-key-SECRET-123";
 const TOKEN = "oauth-access-SECRET-456";
 const cfg: OzonConfig = {
+  env: "prod",
   base: "https://ozon.test",
   oauthBase: "https://xapi.ozon.test",
   sellerClientId: "100001",
@@ -59,6 +61,30 @@ describe("ozonConfig", () => {
   it("Api-Key без Client-Id не используется", () => {
     const c = ozonConfig({ OZON_APP_CLIENT_ID: "a", OZON_APP_CLIENT_SECRET: "s", OZON_API_KEY: "k" } as unknown as NodeJS.ProcessEnv)!;
     expect(c.apiKey).toBeUndefined();
+  });
+  it("OZON_ENV=sandbox: хост песочницы для API и токена, свой секрет, без Api-Key и без переопределений адреса", () => {
+    const env = {
+      OZON_ENV: "sandbox",
+      OZON_APP_CLIENT_ID: "a",
+      OZON_APP_CLIENT_SECRET: "prod-s",
+      OZON_APP_CLIENT_SECRET_SANDBOX: "sb-s",
+      OZON_CLIENT_ID: "100001",
+      OZON_API_KEY: "k",
+      OZON_API_BASE: "https://api-seller.ozon.ru",
+      OZON_OAUTH_BASE: "https://xapi.ozon.ru",
+    } as unknown as NodeJS.ProcessEnv;
+    const c = ozonConfig(env)!;
+    expect(c).toMatchObject({ env: "sandbox", base: SANDBOX_BASE, oauthBase: SANDBOX_BASE, app: { clientId: "a", clientSecret: "sb-s" } });
+    expect(c.apiKey).toBeUndefined();
+    expect(c.sellerClientId).toBeUndefined();
+    // без секрета песочницы песочница выключена, боевой секрет туда не уходит
+    expect(ozonConfig({ ...env, OZON_APP_CLIENT_SECRET_SANDBOX: "" })).toBeNull();
+  });
+  it("OZON_ENV пустой или неизвестный — боевой; секрет песочницы боевому не нужен", () => {
+    for (const OZON_ENV of [undefined, "", "production", "PROD"]) {
+      const c = ozonConfig({ OZON_ENV, OZON_APP_CLIENT_ID: "a", OZON_APP_CLIENT_SECRET: "s" } as unknown as NodeJS.ProcessEnv)!;
+      expect(c).toMatchObject({ env: "prod", base: "https://api-seller.ozon.ru", app: { clientSecret: "s" } });
+    }
   });
 });
 

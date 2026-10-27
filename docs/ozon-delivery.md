@@ -45,14 +45,18 @@
 
 1. **Частное приложение** (методы доставки принимают только OAuth): ЛК продавца → Настройки → Управление частными приложениями → Создать.
    Указать уровни доступа (см. «Роли») → выдать доступ разработчику → в настройках приложения: IP сервера, обратный URL, ссылка авторизации.
-2. На сервере в `/etc/vialabote-shop/app.env`: `OZON_APP_CLIENT_ID`, `OZON_APP_CLIENT_SECRET`, `OZON_APP_REDIRECT_URI`
-   (+ при желании `OZON_CLIENT_ID`, `OZON_API_KEY` для остатков и отправлений).
+2. На сервере в `/etc/vialabote-shop/app.env`: `OZON_APP_CLIENT_ID`, `OZON_APP_CLIENT_SECRET`, `OZON_APP_CLIENT_SECRET_SANDBOX`,
+   `OZON_APP_REDIRECT_URI=https://shop.vialabote.ru/ozon-oauth`, `OZON_APP_SCOPE` (идентификаторы уровней доступа через пробел)
+   (+ при желании `OZON_CLIENT_ID`, `OZON_API_KEY` для остатков и отправлений). `OZON_CHECKOUT_ENABLED` пока **не** ставить:
+   без него покупатели Ozon не видят, а ключи проверяются скриптами.
 3. Миграция `prisma/migrations/20261027200000_ozon_delivery` (`npx prisma migrate deploy`) — **до** выкладки кода.
-4. Авторизация: `npx tsx scripts/ozon/oauth.ts url` → открыть ссылку → согласиться → из адреса возврата взять `code` →
-   `npx tsx scripts/ozon/oauth.ts exchange <code>`. Токены — в таблице `OzonOAuthToken`, в консоль не выводятся.
+4. Авторизация: `npx tsx scripts/ozon/oauth.ts url` → открыть ссылку (действует 30 мин) в браузере, где вход в кабинет Ozon →
+   согласиться. Ozon вернёт на `/ozon-oauth`: страница проверит подписанный `state`, обменяет `code` и напишет «Ozon подключён».
+   Запасной путь — `oauth.ts exchange <code>`. Токены — в таблице `OzonOAuthToken`, на страницу и в консоль не выводятся.
 5. Товары: в `Product.ozonSku` (SKU Ozon) и `Product.ozonOfferId` (артикул) — карточки на Ozon с остатком на FBS-складе.
    Товар без `ozonSku` в доставку Ozon не попадает: расчёт вернёт `NOT_MAPPED`.
-6. Проверка (только чтение): `scripts/ozon/check.ts`, см. ниже.
+6. Проверка (только чтение): `scripts/ozon/check.ts`, см. ниже. Сценарий заказа — в песочнице, `scripts/ozon/sandbox-e2e.ts`.
+   Витрина включается `OZON_CHECKOUT_ENABLED=1` + рестарт, когда оба прогона чистые.
 7. Таймер опроса: `scripts/ozon/sync.ts` раз в 10 минут (systemd timer с тем же `EnvironmentFile`).
 8. Адрес клиента для ограничителя частоты берётся из `X-Forwarded-For`, справа налево с учётом `TRUSTED_PROXY_HOPS`
    (сколько наших прокси дописывают XFF). `X-Real-IP` не читается: `ops/dr/edge-setup.sh` и `vm-*.sh` его не ставят,
@@ -83,6 +87,24 @@ sudo bash -c 'set -a; . /etc/vialabote-shop/app.env; set +a; cd /opt/vialabote-s
 ближайший ПВЗ к центру города и `v2/delivery/checkout` до него и курьером: цена, крайний срок, метод, склад.
 Любой путь вне белого списка (в том числе `v2/order/create` и отмена) блокируется до сети.
 Ошибки печатаются с HTTP-кодом и текстом ответа Ozon: по нему видно, например, `Api-Key is restricted to specific IP addresses`.
+
+## Песочница (сценарий заказа без реального заказа)
+
+`api-seller-sandbox.ozon.ru`, токен — `client_credentials` с секретом песочницы (`OZON_APP_CLIENT_SECRET_SANDBOX`), строка
+`OzonOAuthToken` `sandbox` отдельно от боевой `seller`. Песочница поддерживает ПВЗ, `v2/delivery/checkout`, `v2/order/create`,
+отмену, `v4/posting/fbs/list` и остатки; `v3/posting/fbs/get`, `v1/returns/list` и `v1/roles` в ней нет.
+
+```bash
+sudo bash -c 'set -a; . /etc/vialabote-shop/app.env; set +a; cd /opt/vialabote-shop/current && npx tsx scripts/ozon/sandbox-e2e.ts --advance 1'
+```
+
+Скрипт берёт товар песочницы (`v3/product/list` → остатки), ближайший к центру Москвы ПВЗ и тестового покупателя
+`+79990000001`, считает доставку, создаёт заказ тем же `buildOrderCreateBody`, что и боевой, показывает отправления,
+сдвигает статус (`/v1/sandbox/posting/status/change`) и отменяет заказ. `--dry` — без `order/create`, `--keep` — без отмены.
+Любой запрос не на хост песочницы блокируется до сети.
+
+`OZON_ENV=sandbox` в `app.env` выключает всё боевое: витрина без Ozon, оплаченные заказы в Ozon не уходят (останутся `PENDING`).
+Скриптам песочницы `OZON_ENV` не нужен — они всегда работают с песочницей.
 
 ## Роли
 

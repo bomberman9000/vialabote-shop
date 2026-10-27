@@ -22,6 +22,7 @@ const webhook = await import("./webhook/route");
 const on = () => {
   vi.stubEnv("OZON_APP_CLIENT_ID", "app");
   vi.stubEnv("OZON_APP_CLIENT_SECRET", "secret");
+  vi.stubEnv("OZON_CHECKOUT_ENABLED", "1");
 };
 const get = (url: string, ip = "10.0.0.1") => new Request(`http://localhost${url}`, { headers: { "x-forwarded-for": ip } });
 const post = (url: string, body: unknown, ip = "10.0.0.1") =>
@@ -53,9 +54,25 @@ describe("выключатель", () => {
     expect((await webhook.POST(post("/api/delivery/ozon/webhook", {}))).status).toBe(503);
     expect(fake.fetch).not.toHaveBeenCalled();
   });
-  it("с OZON_APP_* — enabled:true", async () => {
+  it("с OZON_APP_* и OZON_CHECKOUT_ENABLED=1 — enabled:true", async () => {
     on();
     expect(await (await status.GET()).json()).toEqual({ enabled: true });
+  });
+  it("ключи есть, но витрина не включена — покупатель Ozon не видит; песочница на витрину не попадает никогда", async () => {
+    const fake = fakeFetch({});
+    vi.stubGlobal("fetch", fake.fetch);
+    on();
+    vi.stubEnv("OZON_CHECKOUT_ENABLED", "");
+    expect(await (await status.GET()).json()).toEqual({ enabled: false });
+    expect((await points.GET(get("/api/delivery/ozon/points?lat=53.2&long=50.1"))).status).toBe(503);
+
+    on();
+    vi.stubEnv("OZON_ENV", "sandbox");
+    vi.stubEnv("OZON_APP_CLIENT_SECRET_SANDBOX", "sb-secret");
+    expect(await (await status.GET()).json()).toEqual({ enabled: false });
+    expect((await quote.POST(post("/api/delivery/ozon/quote", {}))).status).toBe(503);
+    expect((await webhook.POST(post("/api/delivery/ozon/webhook", {}))).status).toBe(503);
+    expect(fake.fetch).not.toHaveBeenCalled();
   });
 });
 

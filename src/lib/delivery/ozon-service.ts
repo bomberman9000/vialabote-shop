@@ -24,7 +24,24 @@ export interface Ozon {
 
 let instance: { key: string; ozon: Ozon } | null = null;
 
-/** null — Ozon Доставка выключена. Пересобирается, только если поменялось окружение (тесты). */
+/**
+ * Боевой Ozon для заказов, которые уже есть (довести после оплаты, опрос статусов, админка): только OZON_ENV=prod.
+ * Песочница сюда не попадает никогда — настоящие оплаченные заказы не уйдут в тестовую среду.
+ */
+export function getProdOzon(env: NodeJS.ProcessEnv = process.env): Ozon | null {
+  const ozon = getOzon(env);
+  return ozon?.cfg.env === "prod" ? ozon : null;
+}
+
+/**
+ * Ozon на витрине (выбор ПВЗ, расчёт, оформление): боевой и явно включён OZON_CHECKOUT_ENABLED=1.
+ * Без флага ключи можно положить и проверить скриптами — покупатели ничего не увидят.
+ */
+export function getCheckoutOzon(env: NodeJS.ProcessEnv = process.env): Ozon | null {
+  return env.OZON_CHECKOUT_ENABLED?.trim() === "1" ? getProdOzon(env) : null;
+}
+
+/** Любой настроенный Ozon, в том числе песочница: для скриптов (check, oauth, sandbox-e2e). null — нет ключей. */
 export function getOzon(env: NodeJS.ProcessEnv = process.env): Ozon | null {
   const cfg = ozonConfig(env);
   if (!cfg) return null;

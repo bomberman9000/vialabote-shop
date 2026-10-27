@@ -18,7 +18,13 @@ export function fakeFetch(routes: Record<string, Handler>) {
   const calls: { path: string; body: any; headers: Record<string, string> }[] = [];
   const fetch = vi.fn(async (url: string | URL, init?: RequestInit) => {
     const path = new URL(String(url)).pathname;
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const raw = init?.body ? String(init.body) : undefined;
+    let body;
+    try {
+      body = raw === undefined ? undefined : JSON.parse(raw);
+    } catch {
+      body = Object.fromEntries(new URLSearchParams(raw)); // x-www-form-urlencoded (токен песочницы)
+    }
     calls.push({ path, body, headers: (init?.headers ?? {}) as Record<string, string> });
     const key = path in routes ? path : Object.keys(routes).find((k) => k.endsWith("*") && path.startsWith(k.slice(0, -1)));
     const handler = key ? routes[key] : undefined;
@@ -37,6 +43,7 @@ export function fakeFetch(routes: Record<string, Handler>) {
 }
 
 export const testConfig: OzonConfig = {
+  env: "prod",
   base: "https://api-seller.ozon.ru",
   oauthBase: "https://xapi.ozon.ru",
   sellerClientId: "100001",

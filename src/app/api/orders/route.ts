@@ -76,7 +76,9 @@ export async function POST(req: Request) {
   }
 
   const number = `V-${Date.now().toString(36).toUpperCase()}`;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin;
+  // Публичный адрес для возврата из банка. NEXTAUTH_URL читается сервером при запуске;
+  // NEXT_PUBLIC_* Next.js вшивает при сборке (на бою там был внутренний 127.0.0.1).
+  const appUrl = (process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin).replace(/\/$/, "");
   const now = new Date().toISOString();
   const orderData = {
     number,

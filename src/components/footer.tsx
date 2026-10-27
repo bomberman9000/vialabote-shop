@@ -12,8 +12,8 @@ export function Footer() {
         <div>
           <h3 className="mb-2 font-semibold text-brand-50">Доставка и оплата</h3>
           <p>Онлайн-оплата картой через ЮKassa.</p>
-          <p className="mt-2">Доставка: {DELIVERY_TERMS}</p>
-          <p className="mt-2">Возврат: {RETURN_TERMS}</p>
+          <p className="mt-2">{DELIVERY_TERMS}</p>
+          <p className="mt-2">{RETURN_TERMS}</p>
         </div>
         <div>
           <h3 className="mb-2 font-semibold text-brand-50">Контакты</h3>

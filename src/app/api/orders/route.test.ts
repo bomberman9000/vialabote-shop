@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { LEGAL_VERSION } from "@/lib/legal";
 
 // getServerSession() reads next/headers, which requires a real Next.js
 // request-scope not present when calling a route handler directly from
@@ -41,6 +42,8 @@ function checkoutBody(items: { productId: string; quantity: number }[], extra: R
     customerPhone: "+70000000000",
     deliveryCity: "Москва",
     deliveryAddress: "Тестовая, 1",
+    offerAccepted: true,
+    pdnConsent: true,
     items,
     ...extra,
   };
@@ -103,6 +106,31 @@ describe("POST /api/orders — server-authoritative price (никогда не �
   it("несуществующий productId -> 400, заказ не создаётся", async () => {
     const res = await POST(req(checkoutBody([{ productId: "does-not-exist", quantity: 1 }])));
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/orders — согласия по 152-ФЗ и оферте", () => {
+  it.each([
+    ["без обоих согласий", { offerAccepted: undefined, pdnConsent: undefined }],
+    ["только оферта", { pdnConsent: false }],
+    ["только ПДн", { offerAccepted: false }],
+  ])("%s -> 400, заказ не создаётся", async (_name, extra) => {
+    const product = await makeProduct({ price: 100000 });
+    const res = await POST(req(checkoutBody([{ productId: product.id, quantity: 1 }], extra)));
+    expect(res.status).toBe(400);
+  });
+
+  it("оба согласия -> время согласия и версия документов сохраняются с заказом", async () => {
+    const product = await makeProduct({ price: 100000 });
+    const res = await POST(req(checkoutBody([{ productId: product.id, quantity: 1 }])));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    orderIds.push(json.orderId);
+
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: json.orderId } });
+    expect(order.offerAcceptedAt).toBeTruthy();
+    expect(order.pdnConsentAt).toBeTruthy();
+    expect(order.legalVersion).toBe(LEGAL_VERSION);
   });
 });
 

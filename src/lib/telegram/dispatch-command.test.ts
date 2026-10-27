@@ -285,6 +285,8 @@ describe("Telegram preview vs checkout — единая effectivePrice()", () =>
         customerPhone: "+70000000000",
         deliveryCity: "Москва",
         deliveryAddress: "Тестовая, 1",
+        offerAccepted: true,
+        pdnConsent: true,
         items: [{ productId: product.id, quantity: 1 }],
       }),
     });

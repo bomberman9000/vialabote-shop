@@ -95,17 +95,17 @@ afterAll(async () => {
 });
 
 describe.skipIf(!HAS_DB)("Ozon: расчёт корзины", () => {
-  it("цена и максимальный срок из checkout; в Ozon уходят sku, offer_id, точка и схема FBS", async () => {
+  it("цена и максимальный срок из checkout; в Ozon уходят sku (без offer_id), точка и схема FBS", async () => {
     clearOzonCache();
     const p = await product();
     const fake = happy(Number(p.ozonSku), p.ozonOfferId!, 2);
     const q = await quoteCart(testOzon(fake), { lines: [{ productId: p.id, quantity: 2 }], destination: { type: "PVZ", mapPointId: "55" }, phone: "8 999 123 45 67" });
     expect(q).toMatchObject({ available: true, priceKopecks: 25000, maxDate: "2026-11-05T21:00:00Z", deliveryType: "PVZ" });
     expect(fake.bodies("/v2/delivery/checkout")[0]).toEqual({
-      buyer_phone: "+79991234567",
+      buyer_phone: "79991234567", // Ozon: только цифры
       delivery_schema: "FBS",
       delivery_type: { pick_up: { map_point_id: 55 } },
-      items: [{ sku: Number(p.ozonSku), offer_id: p.ozonOfferId, quantity: 2 }],
+      items: [{ sku: Number(p.ozonSku), quantity: 2 }], // sku ИЛИ offer_id: оба Ozon отклоняет
     });
   });
 
@@ -150,8 +150,8 @@ describe.skipIf(!HAS_DB)("Ozon: заказ создаётся только по�
     expect(await orderStatus(o.id)).toBe("PAID");
 
     const body = fake.bodies(CREATE)[0];
-    expect(body.buyer).toEqual({ first_name: "Анна", last_name: "Иванова", phone: "+79991234567" });
-    expect(body.recipient).toEqual({ recipient_first_name: "Анна", recipient_last_name: "Иванова", recipient_phone: "+79991234567" });
+    expect(body.buyer).toEqual({ first_name: "Анна", last_name: "Иванова", phone: "79991234567" }); // Ozon: только цифры
+    expect(body.recipient).toEqual({ recipient_first_name: "Анна", recipient_last_name: "Иванова", recipient_phone: "79991234567" });
     expect(body.delivery).toEqual({ pick_up: { map_point_id: 1020300040005 } });
     expect(body.delivery_schema).toBe("FBS");
     expect(body.splits).toEqual([
@@ -163,7 +163,7 @@ describe.skipIf(!HAS_DB)("Ozon: заказ создаётся только по�
           timeslot_id: 9001,
           price: { units: 250, nanos: 0, currency_code: "RUB" },
         },
-        items: [{ sku, offer_id: offer, quantity: 1, price: { units: 1500, nanos: 0, currency_code: "RUB" } }],
+        items: [{ sku, quantity: 1, price: { units: 1500, nanos: 0, currency_code: "RUB" } }],
         warehouse_id: 777,
       },
     ]);

@@ -74,12 +74,15 @@
 
 ## Проверка на сервере (только чтение)
 
+Скрипты запускаются через `systemd-run` с тем же `EnvironmentFile`, что у сервиса: `set -a; . app.env` в bash теряет
+`DATABASE_URL` (в адресе есть `&`), а `node` нет в `PATH` root.
+
 Запускать **на сервере сайта** (там есть `/etc/vialabote-shop/app.env`), после выкладки этой ветки: в текущем релизе
 скрипта нет. На рабочей машине (ZEROHOUR) ни окружения, ни релиза нет. Вместо `123456789` и `VL-001` подставьте
 SKU и артикул товара из кабинета Ozon. Угловые скобки не писать: bash примет их за перенаправление.
 
 ```bash
-sudo bash -c 'set -a; . /etc/vialabote-shop/app.env; set +a; cd /opt/vialabote-shop/current && npx tsx scripts/ozon/check.ts --sku 123456789 --offer VL-001'
+sudo systemd-run --quiet --wait --pipe --collect -p EnvironmentFile=/etc/vialabote-shop/app.env -p Environment=NODE_EXTRA_CA_CERTS=/etc/vialabote-shop/russian_trusted_root_ca.pem -p WorkingDirectory=/opt/vialabote-shop/current -E PATH=/opt/vialabote-shop/node-v24.21.0/bin:/usr/bin:/bin /opt/vialabote-shop/current/node_modules/.bin/tsx scripts/ozon/check.ts --sku 123456789 --offer VL-001
 ```
 
 Скрипт печатает: какие переменные заданы (без значений), роли Api-Key и срок его действия (`/v1/roles`) и методы, которые есть в OAuth-токене.
@@ -95,7 +98,7 @@ sudo bash -c 'set -a; . /etc/vialabote-shop/app.env; set +a; cd /opt/vialabote-s
 отмену, `v4/posting/fbs/list` и остатки; `v3/posting/fbs/get`, `v1/returns/list` и `v1/roles` в ней нет.
 
 ```bash
-sudo bash -c 'set -a; . /etc/vialabote-shop/app.env; set +a; cd /opt/vialabote-shop/current && npx tsx scripts/ozon/sandbox-e2e.ts --advance 1'
+sudo systemd-run --quiet --wait --pipe --collect -p EnvironmentFile=/etc/vialabote-shop/app.env -p Environment=NODE_EXTRA_CA_CERTS=/etc/vialabote-shop/russian_trusted_root_ca.pem -p WorkingDirectory=/opt/vialabote-shop/current -E PATH=/opt/vialabote-shop/node-v24.21.0/bin:/usr/bin:/bin /opt/vialabote-shop/current/node_modules/.bin/tsx scripts/ozon/sandbox-e2e.ts --advance 1
 ```
 
 Скрипт берёт товар песочницы (`v3/product/list` → остатки), ближайший к центру Москвы ПВЗ и тестового покупателя

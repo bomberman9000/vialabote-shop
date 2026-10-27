@@ -2,7 +2,8 @@
 // белого списка ниже блокируется до сети. Ключи и токены не печатаются (только имена переменных и роли).
 //
 // usage (на сервере, из каталога приложения, с окружением сервиса):
-//   sudo bash -c 'set -a; . /etc/vialabote-shop/app.env; set +a; cd /opt/vialabote-shop/current && npx tsx scripts/ozon/check.ts [--sku 123456789] [--offer VL-001] [--qty 1]'
+//   sudo systemd-run --quiet --wait --pipe --collect -p EnvironmentFile=/etc/vialabote-shop/app.env -p Environment=NODE_EXTRA_CA_CERTS=/etc/vialabote-shop/russian_trusted_root_ca.pem -p WorkingDirectory=/opt/vialabote-shop/current -E PATH=/opt/vialabote-shop/node-v24.21.0/bin:/usr/bin:/bin /opt/vialabote-shop/current/node_modules/.bin/tsx scripts/ozon/check.ts [--sku 123456789] [--offer VL-001] [--qty 1]
+//   (не `set -a; . app.env`: bash теряет DATABASE_URL с «&»; systemd читает файл как сервис)
 // Без --sku берётся первый товар сайта с заполненным ozonSku.
 import { prisma } from "@/lib/prisma";
 import { createOzonClient, OzonError, summarizeCheckout, type LatLong, type OzonClient } from "@/lib/delivery/ozon";

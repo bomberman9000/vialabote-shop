@@ -3,11 +3,14 @@
 // Любой запрос не на хост песочницы блокируется до сети — реальный заказ этим скриптом создать нельзя.
 //
 // usage (на сервере, из каталога приложения; нужен OZON_APP_CLIENT_SECRET_SANDBOX, OZON_ENV в app.env не важен):
-//   sudo bash -c 'set -a; . /etc/vialabote-shop/app.env; set +a; cd /opt/vialabote-shop/current && npx tsx scripts/ozon/sandbox-e2e.ts [флаги]'
+//   systemd-run --quiet --wait --pipe --collect -p EnvironmentFile=/etc/vialabote-shop/app.env \
+//     -p WorkingDirectory=/opt/vialabote-shop/current -E PATH=/opt/vialabote-shop/node-v24.21.0/bin:/usr/bin:/bin \
+//     /opt/vialabote-shop/current/node_modules/.bin/tsx scripts/ozon/sandbox-e2e.ts [флаги]
+// (не `set -a; . app.env`: bash теряет DATABASE_URL с «&» в адресе; systemd читает файл как сервис)
 // флаги: --dry (без order/create)  --keep (не отменять)  --advance N (сдвинуть статус отправлений N раз)
-//        --phone +79990000001  --sku 123 --offer ABC  --point 123456  --price 100 (руб. за штуку)
+//        --phone +79990000001  --sku 123 --offer ABC  --point 123456  --schema FBS|FBO|MIX  --price 100 (руб. за штуку)
 import { prisma } from "@/lib/prisma";
-import { createOzonClient, OzonError, ozonConfig, SANDBOX_BASE, summarizeCheckout, type LatLong } from "@/lib/delivery/ozon";
+import { createOzonClient, OzonError, ozonConfig, SANDBOX_BASE, summarizeCheckout, type LatLong, type OzonConfig, type QuoteSummary } from "@/lib/delivery/ozon";
 import { createTokenStore } from "@/lib/delivery/ozon-token";
 import { distanceKm } from "@/lib/delivery/ozon-service";
 import { buildOrderCreateBody, DEFAULT_CANCEL_REASON } from "@/lib/delivery/ozon-orders";
@@ -58,10 +61,11 @@ async function main() {
   if (users) console.log(`  ${JSON.stringify(users).slice(0, 600)}`);
   const phone = arg("phone") ?? "+79990000001";
 
-  console.log("\n== Товар");
-  let sku = arg("sku") ? Number(arg("sku")) : undefined;
-  let offer = arg("offer");
-  if (!sku) {
+  console.log("\n== Товары");
+  // Тестовые товары песочницы доставляются не везде (BANNED_FOR_AREA, нет таймслотов) — берём несколько и перебираем.
+  const candidates: { sku: number; offer?: string }[] = [];
+  if (arg("sku")) candidates.push({ sku: Number(arg("sku")), offer: arg("offer") });
+  else {
     const list = await step("v3/product/list", () =>
       client.call<{ result?: { items?: { product_id?: number; offer_id?: string }[] } }>("/v3/product/list", {
         filter: { visibility: "ALL" },
@@ -70,57 +74,82 @@ async function main() {
       }),
     );
     const offers = (list?.result?.items ?? []).map((i) => i.offer_id).filter((o): o is string => !!o);
-    console.log(`  товаров в песочнице: ${offers.length}`);
     const st = offers.length ? await step("v4/product/info/stocks", () => client.productStocks(offers.slice(0, 100))) : null;
     for (const i of st?.items ?? []) {
-      const s = (i.stocks ?? []).find((x) => x.sku && (x.present ?? 0) - (x.reserved ?? 0) > 0) ?? (i.stocks ?? []).find((x) => x.sku);
-      if (s?.sku) {
-        sku = s.sku;
-        offer = i.offer_id;
-        console.log(`  выбран offer_id ${offer}, sku ${sku} (${s.type ?? "?"}: present ${s.present ?? 0}, reserved ${s.reserved ?? 0})`);
-        break;
-      }
+      const s = (i.stocks ?? []).find((x) => x.sku && (x.present ?? 0) - (x.reserved ?? 0) > 0);
+      if (s?.sku) candidates.push({ sku: s.sku, offer: i.offer_id });
     }
   }
-  if (!sku) {
-    console.log("  Нет SKU: передайте --sku (и --offer) товара песочницы.");
+  console.log(`  с остатком: ${candidates.length}`);
+  if (!candidates.length) {
+    console.log("  Нет товара с остатком: передайте --sku (и --offer) товара песочницы.");
     return;
   }
-  const item = { sku, ...(offer ? { offer_id: offer } : {}), quantity: 1 };
 
   console.log("\n== ПВЗ");
-  let point = arg("point");
-  if (!point) {
+  const CITIES: { name: string; at: LatLong }[] = [
+    { name: "Москва", at: MOSCOW },
+    { name: "Санкт-Петербург", at: { lat: 59.9386, long: 30.3141 } },
+    { name: "Казань", at: { lat: 55.7963, long: 49.1088 } },
+    { name: "Самара", at: { lat: 53.1959, long: 50.1002 } },
+    { name: "Екатеринбург", at: { lat: 56.8389, long: 60.6057 } },
+    { name: "Новосибирск", at: { lat: 55.0302, long: 82.9204 } },
+  ];
+  let points: { id: string; name: string }[] = [];
+  if (arg("point")) points = [{ id: arg("point")!, name: "--point" }];
+  else {
     const pts = await step("point/list", () => client.deliveryPointList());
-    const near = (pts?.points ?? [])
-      .filter((p) => p.coordinate && p.map_point_id)
-      .map((p) => ({ id: String(p.map_point_id), km: distanceKm(MOSCOW, { lat: p.coordinate!.lat, long: p.coordinate!.long }) }))
-      .sort((a, b) => a.km - b.km)[0];
-    console.log(`  точек: ${pts?.points?.length ?? 0}${near ? `; ближайшая к центру Москвы ${near.id} (${near.km.toFixed(1)} км)` : ""}`);
-    point = near?.id;
+    const all = (pts?.points ?? []).filter((p) => p.coordinate && p.map_point_id).map((p) => ({ id: String(p.map_point_id), lat: p.coordinate!.lat, long: p.coordinate!.long }));
+    console.log(`  точек: ${all.length}`);
+    for (const c of CITIES) {
+      const near = all.map((p) => ({ id: p.id, km: distanceKm(c.at, p) })).sort((a, b) => a.km - b.km)[0];
+      if (near) points.push({ id: near.id, name: `${c.name} (${near.km.toFixed(1)} км от центра)` });
+    }
   }
-  if (!point) return;
-  const info = await step("point/info", () => client.deliveryPointInfo([point!]));
-  console.log(`  ПВЗ ${point}: ${info?.points?.[0]?.delivery_method?.address ?? "?"}`);
+  if (!points.length) return;
 
   console.log("\n== Покупатель и расчёт");
   const can = await step("delivery/check", () => client.deliveryCheck(phone));
   console.log(`  ${phone}: доставка ${can?.is_possible ? "возможна" : "НЕвозможна"}`);
-  const res = await step("v2/delivery/checkout", () =>
-    client.deliveryCheckout({ buyer_phone: phone, delivery_schema: cfg.deliverySchema, delivery_type: { pick_up: { map_point_id: Number(point) } }, items: [item] }),
-  );
-  if (!res) return;
-  const q = summarizeCheckout(res);
-  if (!q.available) {
-    console.log(`  недоступно: ${q.reason}`);
+  const schemas = (arg("schema") ? [arg("schema")!] : [cfg.deliverySchema, "FBS", "FBO", "MIX"]).filter((x, i, a) => a.indexOf(x) === i) as OzonConfig["deliverySchema"][];
+  const misses = new Map<string, number>();
+  let found: { schema: OzonConfig["deliverySchema"]; point: { id: string; name: string }; item: { sku: number; offer?: string }; q: Extract<QuoteSummary, { available: true }> } | null = null;
+  search: for (const schema of schemas) {
+    for (const point of points) {
+      for (const item of candidates) {
+        const res = await step(`checkout ${schema} ${point.id} ${item.sku}`, () =>
+          client.deliveryCheckout({
+            buyer_phone: phone,
+            delivery_schema: schema,
+            delivery_type: { pick_up: { map_point_id: Number(point.id) } },
+            items: [{ sku: item.sku, quantity: 1 }],
+          }),
+        );
+        if (!res) continue;
+        const q = summarizeCheckout(res);
+        if (q.available) {
+          found = { schema, point, item, q };
+          break search;
+        }
+        misses.set(`${schema}: ${q.reason}`, (misses.get(`${schema}: ${q.reason}`) ?? 0) + 1);
+      }
+    }
+  }
+  if (!found) {
+    console.log(`  доставляемой пары «товар + ПВЗ» нет; причины: ${[...misses].map(([k, v]) => `${k} ×${v}`).join(", ")}`);
     return;
   }
-  console.log(`  ✓ ${(q.priceKopecks / 100).toFixed(2)} ₽, получение не позднее ${formatDeliveryDate(q.maxDate)} (${q.maxDate}), отправлений ${q.splits.length}`);
+  const { schema, point, item, q } = found;
+  const sku = item.sku;
+  const info = await step("point/info", () => client.deliveryPointInfo([point.id]));
+  console.log(`  ✓ схема ${schema}, ПВЗ ${point.id} — ${point.name}: ${info?.points?.[0]?.delivery_method?.address ?? "?"}`);
+  console.log(`  ✓ sku ${sku}${item.offer ? ` (${item.offer})` : ""}: ${(q.priceKopecks / 100).toFixed(2)} ₽, получение не позднее ${formatDeliveryDate(q.maxDate)} (${q.maxDate}), отправлений ${q.splits.length}`);
+  if (misses.size) console.log(`  (до этого не подошло: ${[...misses].map(([k, v]) => `${k} ×${v}`).join(", ")})`);
 
   const body = buildOrderCreateBody(
-    { destination: { type: "PVZ", mapPointId: point }, recipient: { lastName: "Тестов", firstName: "Тест", phone } },
+    { destination: { type: "PVZ", mapPointId: point.id }, recipient: { lastName: "Тестов", firstName: "Тест", phone } },
     q.splits,
-    { deliverySchema: cfg.deliverySchema, deliveryPriceKopecks: q.priceKopecks, priceBySku: new Map([[sku, Math.round(Number(arg("price") ?? 100) * 100)]]) },
+    { deliverySchema: schema, deliveryPriceKopecks: q.priceKopecks, priceBySku: new Map([[sku, Math.round(Number(arg("price") ?? 100) * 100)]]) },
   );
   if (flag("dry")) {
     console.log("\n--dry: тело order/create (в Ozon не отправлено):");

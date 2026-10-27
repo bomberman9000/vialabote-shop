@@ -7,6 +7,10 @@ import {
   normalizeRuPhone,
   OzonError,
   ozonConfig,
+  ozonItem,
+  POINT_LIST_TIMEOUT_MS,
+  toOzonPhone,
+  withEdgeCookies,
   SANDBOX_BASE,
   Pacer,
   parseRetryAfter,
@@ -196,7 +200,13 @@ describe("429 и Retry-After", () => {
 });
 
 describe("order/create — реальный заказ, повтор только когда запрос точно не выполнен", () => {
-  const body = {} as Parameters<ReturnType<typeof createOzonClient>["orderCreate"]>[0];
+  const body: Parameters<ReturnType<typeof createOzonClient>["orderCreate"]>[0] = {
+    buyer: { first_name: "А", last_name: "Б", phone: "+79990000001" },
+    recipient: { recipient_first_name: "А", recipient_last_name: "Б", recipient_phone: "+79990000001" },
+    delivery: { pick_up: { map_point_id: 1 } },
+    delivery_schema: "FBS",
+    splits: [],
+  };
   it("500 не повторяется", async () => {
     const f = vi.fn().mockResolvedValue(json(500, {}));
     const { c } = client(f);
@@ -239,6 +249,71 @@ describe("темп ≤ rps", () => {
     await Promise.all(Array.from({ length: 10 }, () => c.deliveryPointList()));
     expect(f).toHaveBeenCalledTimes(10);
     expect(t).toBeGreaterThanOrEqual(180);
+  });
+});
+
+describe("найдено в песочнице Ozon (живые ответы)", () => {
+  it("антибот: 307 на тот же хост с cookie -> один повтор с cookie, тот же метод и тело; дальше cookie сразу", async () => {
+    const f = vi.fn(async (url: string, init: RequestInit) => {
+      const cookie = (init.headers as Record<string, string>).Cookie;
+      if (!cookie) return { ...json(307, {}, { location: `${url.split("?")[0]}?__rr=1`, "set-cookie": "__Secure-ETC=abc; path=/; HttpOnly" }), body: null };
+      return json(200, { ok: cookie });
+    });
+    const wrapped = withEdgeCookies(f as unknown as typeof fetch);
+    const r1 = await wrapped("https://ozon.test/oauth/token", { method: "POST", body: "x=1", headers: { "Content-Type": "a/b" } });
+    expect(await r1.json()).toEqual({ ok: "__Secure-ETC=abc" });
+    expect(f.mock.calls.map((c) => [c[0], c[1].method, c[1].body, c[1].redirect])).toEqual([
+      ["https://ozon.test/oauth/token", "POST", "x=1", "manual"],
+      ["https://ozon.test/oauth/token?__rr=1", "POST", "x=1", "manual"],
+    ]);
+    await wrapped("https://ozon.test/v1/x", { method: "POST", headers: {} });
+    expect(f).toHaveBeenCalledTimes(3); // cookie уже есть — без нового редиректа
+  });
+  it("антибот: редирект на чужой хост не выполняется; бесконечный — не больше 3 повторов", async () => {
+    const away = vi.fn(async () => json(307, {}, { location: "https://evil.test/x" }));
+    expect((await withEdgeCookies(away as unknown as typeof fetch)("https://ozon.test/a", {})).status).toBe(307);
+    expect(away).toHaveBeenCalledTimes(1);
+    const loop = vi.fn(async (url: string) => json(307, {}, { location: url }));
+    expect((await withEdgeCookies(loop as unknown as typeof fetch)("https://ozon.test/a", {})).status).toBe(307);
+    expect(loop).toHaveBeenCalledTimes(4);
+  });
+  it("телефон — только цифры (Ozon: ^\\d{10,15}$) в check, checkout и order/create; позиция — sku ИЛИ offer_id", async () => {
+    expect(toOzonPhone("+79990000001")).toBe("79990000001");
+    expect(ozonItem({ sku: 5, offer_id: "A", quantity: 1 })).toEqual({ sku: 5, quantity: 1 });
+    expect(ozonItem({ offer_id: "A", quantity: 1 })).toEqual({ offer_id: "A", quantity: 1 });
+    const f = vi.fn().mockResolvedValue(json(200, {}));
+    const { c } = client(f);
+    await c.deliveryCheck("+79990000001");
+    await c.deliveryCheckout({ buyer_phone: "+79990000001", delivery_schema: "FBS", delivery_type: { pick_up: { map_point_id: 1 } }, items: [{ sku: 5, offer_id: "A", quantity: 1 }] });
+    await c.orderCreate({
+      buyer: { first_name: "А", last_name: "Б", phone: "+79990000001" },
+      recipient: { recipient_first_name: "А", recipient_last_name: "Б", recipient_phone: "+79990000001" },
+      delivery: { pick_up: { map_point_id: 1 } },
+      delivery_schema: "FBS",
+      splits: [
+        {
+          delivery_method: { delivery_method_id: 1, delivery_type: "PVZ", logistic_date_range: { from: "a", to: "b" }, timeslot_id: 1 },
+          items: [{ sku: 5, offer_id: "A", quantity: 1, price: toOzonMoney(100) }],
+          warehouse_id: 1,
+        },
+      ],
+    });
+    const bodies = f.mock.calls.map((c) => JSON.parse(c[1].body));
+    expect(bodies[0]).toEqual({ client_phone: "79990000001" });
+    expect(bodies[1]).toMatchObject({ buyer_phone: "79990000001", items: [{ sku: 5, quantity: 1 }] });
+    expect(bodies[1].items[0].offer_id).toBeUndefined();
+    expect(bodies[2].buyer.phone).toBe("79990000001");
+    expect(bodies[2].recipient.recipient_phone).toBe("79990000001");
+    expect(bodies[2].splits[0].items[0]).toEqual({ sku: 5, quantity: 1, price: toOzonMoney(100) });
+  });
+  it("список ПВЗ (~7 МБ, 35–40 с) — свой таймаут, остальные — общий", async () => {
+    const spy = vi.spyOn(AbortSignal, "timeout");
+    const f = vi.fn().mockResolvedValue(json(200, { points: [] }));
+    const { c } = client(f);
+    await c.deliveryPointList();
+    await c.deliveryCheck("79990000001");
+    expect(spy.mock.calls.map((a) => a[0])).toEqual([POINT_LIST_TIMEOUT_MS, 15_000]);
+    spy.mockRestore();
   });
 });
 

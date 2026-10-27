@@ -144,7 +144,7 @@ describe("POST /api/orders — доставка Ozon", () => {
     const res = await post(body(p.id, pvz));
     expect(res.status).toBe(409);
     expect((await res.json()).reason).toBe("NO_OZON_ACCOUNT");
-    expect(fake.bodies("/v1/delivery/check")).toEqual([{ client_phone: "+79991234567" }]);
+    expect(fake.bodies("/v1/delivery/check")).toEqual([{ client_phone: "79991234567" }]); // Ozon: только цифры
     expect(fake.count("/v2/delivery/checkout")).toBe(0);
     expect(fake.count("/uapi/acquiring/v1.0/payments")).toBe(0);
   });

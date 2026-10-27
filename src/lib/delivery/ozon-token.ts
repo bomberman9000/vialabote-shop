@@ -3,7 +3,7 @@
 // (модель OzonOAuthToken), а обновление идёт под блокировкой строки: два процесса (сайт и опрос статусов)
 // не потратят один refresh_token дважды. Ни токены, ни client_secret не попадают в ошибки и журналы.
 import type { PrismaClient } from "@prisma/client";
-import { OzonError, type OzonConfig } from "./ozon";
+import { OzonError, withEdgeCookies, type OzonConfig } from "./ozon";
 
 const DEFAULT_ROW_ID = "seller";
 const EARLY_REFRESH_MS = 60_000;
@@ -57,7 +57,7 @@ function scopeText(scope: TokenResponse["scope"]): string | null {
 
 /** Хранилище токена: кеш в памяти процесса + строка в БД. */
 export function createTokenStore(cfg: OzonConfig, deps: TokenDeps) {
-  const doFetch = deps.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+  const doFetch = withEdgeCookies(deps.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a)));
   const now = deps.now ?? Date.now;
   // Токен песочницы хранится отдельно от боевого: смена OZON_ENV не подсунет один вместо другого.
   const ROW_ID = deps.rowId ?? (cfg.env === "sandbox" ? "sandbox" : DEFAULT_ROW_ID);

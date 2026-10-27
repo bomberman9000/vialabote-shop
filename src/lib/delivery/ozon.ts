@@ -17,6 +17,8 @@ const DEFAULT_OAUTH_BASE = "https://xapi.ozon.ru";
 export const SANDBOX_BASE = "https://api-seller-sandbox.ozon.ru";
 const MAX_RPS = 50;
 const TIMEOUT_MS = 15_000;
+// Все ПВЗ России — ~7 МБ (~99 тыс. точек), с сервера магазина скачивается 35–40 с: общий таймаут его обрывал.
+export const POINT_LIST_TIMEOUT_MS = 120_000;
 const MAX_429_RETRIES = 3;
 const MAX_RETRY_AFTER_MS = 30_000;
 
@@ -149,12 +151,49 @@ export interface CallOptions {
    * 429 и 401 повторяются всегда: такой ответ значит, что запрос НЕ выполнен.
    */
   idempotent?: boolean;
+  /** таймаут запроса вместе с телом ответа; по умолчанию TIMEOUT_MS */
+  timeoutMs?: number;
+}
+
+/**
+ * Защита на входе Ozon (видна на api-seller-sandbox.ozon.ru): первый запрос получает 307 на тот же адрес
+ * с ?__rr=1 и cookie __Secure-ETC, а без cookie редирект бесконечный. Повторяем запрос на тот же хост с cookie —
+ * тот же метод и тело (307/308 это допускают), cookie запоминается для следующих запросов. Редирект на другой
+ * хост и прочие ответы возвращаются как есть. Значения cookie никуда не пишутся.
+ */
+export function withEdgeCookies(doFetch: typeof fetch, maxHops = 3): typeof fetch {
+  const jar = new Map<string, Map<string, string>>(); // origin -> имя -> значение
+  return async (input, init = {}) => {
+    let url = new URL(String(input));
+    for (let hop = 0; ; hop++) {
+      const cookies = jar.get(url.origin);
+      const headers = {
+        ...((init.headers ?? {}) as Record<string, string>),
+        ...(cookies?.size ? { Cookie: [...cookies].map(([k, v]) => `${k}=${v}`).join("; ") } : {}),
+      };
+      const res = await doFetch(url.toString(), { ...init, headers, redirect: "manual" });
+      if ((res.status !== 307 && res.status !== 308) || hop >= maxHops) return res;
+      const loc = res.headers.get("location");
+      const next = loc ? new URL(loc, url) : null;
+      if (!next || next.origin !== url.origin) return res;
+      const h = res.headers as Headers & { getSetCookie?: () => string[] };
+      const raw = typeof h.getSetCookie === "function" ? h.getSetCookie() : [h.get("set-cookie")].filter((x): x is string => !!x);
+      const bag = cookies ?? new Map<string, string>();
+      for (const c of raw) {
+        const m = /^\s*([^=;\s]+)=([^;]*)/.exec(c);
+        if (m) bag.set(m[1], m[2]);
+      }
+      jar.set(url.origin, bag);
+      await res.body?.cancel().catch(() => {});
+      url = next;
+    }
+  };
 }
 
 export type OzonClient = ReturnType<typeof createOzonClient>;
 
 export function createOzonClient(cfg: OzonConfig, deps: OzonDeps) {
-  const doFetch = deps.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+  const doFetch = withEdgeCookies(deps.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a)));
   const sleep = deps.sleep ?? defaultSleep;
   const now = deps.now ?? Date.now;
   const pacer = new Pacer(Math.ceil(1000 / cfg.rps), now, sleep);
@@ -182,7 +221,7 @@ export function createOzonClient(cfg: OzonConfig, deps: OzonDeps) {
           method: "POST",
           headers: await headers(path, retried401),
           body: JSON.stringify(body ?? {}),
-          signal: AbortSignal.timeout(TIMEOUT_MS),
+          signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS),
         });
       } catch (err) {
         if (err instanceof OzonError) throw err; // ошибка получения токена
@@ -215,16 +254,30 @@ export function createOzonClient(cfg: OzonConfig, deps: OzonDeps) {
     call,
 
     // ------------------------------------------------ точки самовывоза и доставка
-    deliveryPointList: () => call<DeliveryPointListResponse>("/v1/delivery/point/list", {}),
+    deliveryPointList: () => call<DeliveryPointListResponse>("/v1/delivery/point/list", {}, { timeoutMs: POINT_LIST_TIMEOUT_MS }),
     deliveryPointInfo: (mapPointIds: string[]) =>
       call<DeliveryPointInfoResponse>("/v1/delivery/point/info", { map_point_ids: mapPointIds.slice(0, 100) }),
     deliveryMap: (viewport: Viewport, zoom: number) => call<DeliveryMapResponse>("/v1/delivery/map", { viewport, zoom }),
-    deliveryCheck: (clientPhone: string) => call<{ is_possible?: boolean }>("/v1/delivery/check", { client_phone: clientPhone }),
-    deliveryCheckout: (req: CheckoutRequest) => call<CheckoutResponse>("/v2/delivery/checkout", req),
+    deliveryCheck: (clientPhone: string) => call<{ is_possible?: boolean }>("/v1/delivery/check", { client_phone: toOzonPhone(clientPhone) }),
+    deliveryCheckout: (req: CheckoutRequest) =>
+      call<CheckoutResponse>("/v2/delivery/checkout", {
+        ...req,
+        ...(req.buyer_phone ? { buyer_phone: toOzonPhone(req.buyer_phone) } : {}),
+        items: req.items.map(ozonItem),
+      }),
 
     // ------------------------------------------------ заказ (реальный!)
     orderCreate: (req: OrderCreateRequest) =>
-      call<{ order_number?: string; postings?: string[] }>("/v2/order/create", req, { idempotent: false }),
+      call<{ order_number?: string; postings?: string[] }>(
+        "/v2/order/create",
+        {
+          ...req,
+          buyer: { ...req.buyer, phone: toOzonPhone(req.buyer.phone) },
+          recipient: { ...req.recipient, recipient_phone: toOzonPhone(req.recipient.recipient_phone) },
+          splits: req.splits.map((s) => ({ ...s, items: s.items.map(ozonItem) })),
+        },
+        { idempotent: false },
+      ),
     orderCancelCheck: (orderNumber: string) => call<OrderCancelCheckResponse>("/v1/order/cancel/check", { order_number: orderNumber }),
     cancelReasonsByOrder: (orderNumber: string) =>
       call<{ reasons?: { id?: number; name?: string }[] }>("/v1/cancel-reason/list-by-order", { order_number: orderNumber }),
@@ -489,6 +542,23 @@ export function summarizeCheckout(res: CheckoutResponse): QuoteSummary {
   }
   const maxDate = chosen.reduce((a, c) => (Date.parse(c.clientDateTo) > Date.parse(a) ? c.clientDateTo : a), chosen[0].clientDateTo);
   return { available: true, priceKopecks: chosen.reduce((s, c) => s + c.priceKopecks, 0), maxDate, splits: chosen };
+}
+
+/**
+ * Телефон в запросе к Ozon — только цифры: Ozon проверяет ^\d{10,15}$ (ответ песочницы на «+7…»: HTTP 400).
+ * В заказе сайта телефон хранится как +7XXXXXXXXXX (normalizeRuPhone), переводится здесь, в клиенте.
+ */
+export function toOzonPhone(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
+/**
+ * Позиция в запросе к Ozon: sku ИЛИ offer_id. Оба сразу Ozon отклоняет: HTTP 400 «either sku or offer_id
+ * should be specified for each item» (проверено в песочнице). sku точнее — он, если есть.
+ */
+export function ozonItem<T extends { sku?: number; offer_id?: string }>(item: T): Omit<T, "sku" | "offer_id"> & ({ sku: number } | { offer_id: string }) {
+  const { sku, offer_id, ...rest } = item;
+  return sku ? { ...rest, sku } : { ...rest, offer_id: offer_id! };
 }
 
 /** Телефон покупателя -> +7XXXXXXXXXX (Ozon доставляет только по РФ). Иначе null. */

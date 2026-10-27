@@ -134,6 +134,20 @@ export class FakeDb {
   auditLog = new Model(this);
   mediaAsset = new Model(this);
   discount = new Model(this);
+  /** журнал вызовов: "lock:<orderId>" и "read:<model>" — тесты проверяют порядок блокировки */
+  calls: string[] = [];
+
+  /**
+   * Поддерживается ровно один сырой запрос — блокировка заказа в movements.lockOrder:
+   * SELECT "id" FROM "Order" WHERE "id" = $1 FOR UPDATE. Остальное -> исключение.
+   */
+  async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]) {
+    const sql = strings.join("$");
+    if (!/FROM "Order" WHERE "id" = \$ FOR UPDATE/.test(sql)) throw new Error(`fake-prisma: unsupported raw SQL: ${sql}`);
+    this.calls.push(`lock:${String(values[0])}`);
+    return this.order.rows.filter((o) => o.id === values[0]).map((o) => ({ id: o.id }));
+  }
+
   private queue: Promise<unknown> = Promise.resolve();
   private models(): Model[] {
     return Object.values(this).filter((v): v is Model => v instanceof Model);

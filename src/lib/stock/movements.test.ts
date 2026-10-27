@@ -25,6 +25,7 @@ beforeEach(async () => {
   db = new FakeDb();
   await db.product.create({ data: { id: "pA", title: "A", stock: 5, version: 1 } });
   await db.product.create({ data: { id: "pB", title: "B", stock: 1, version: 1 } });
+  for (const id of ["o1", "r1", "r2", "x"]) await db.order.create({ data: { id, number: id } });
 });
 
 describe("reserveForOrder", () => {
@@ -58,7 +59,7 @@ describe("reserveForOrder", () => {
     expect(err).toBeInstanceOf(StockError);
     expect(err).toMatchObject({ code: "OUT_OF_STOCK", details: { productId: "pB", requested: 2, available: 1 } });
     expect([stock("pA"), stock("pB")]).toEqual([5, 1]); // pA уже было списано внутри — откатилось
-    expect(db.order.rows).toHaveLength(0);
+    expect(db.order.rows.find((o) => o.id === "o2")).toBeUndefined();
     expect(db.stockChangeLog.rows).toHaveLength(0);
   });
 
@@ -94,7 +95,7 @@ describe("reserveForOrder", () => {
     );
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(stock("pB")).toBe(0);
-    expect(db.order.rows).toHaveLength(1);
+    expect(db.order.rows.filter((o) => o.id === "t1" || o.id === "t2")).toHaveLength(1);
   });
 
   it.each([
@@ -133,6 +134,7 @@ describe("releaseOrder", () => {
   });
 
   it("order without reserve (legacy order) -> empty result, no error", async () => {
+    await db.order.create({ data: { id: "legacy", number: "legacy" } });
     expect(await releaseOrder(tx(), { orderId: "legacy" })).toEqual({ released: [], alreadyReleased: [], committed: [] });
   });
 
@@ -163,6 +165,36 @@ describe("releaseOrder", () => {
     await Promise.allSettled([1, 2].map(() => db.$transaction((t) => releaseOrder(t as unknown as Tx, { orderId: "o1" }))));
     expect(stock("pA")).toBe(5);
     expect(ledgerHolds("pA", 5)).toBe(true);
+  });
+});
+
+describe("order lock (FOR UPDATE)", () => {
+  it("reserve, release and commit lock the order row BEFORE reading the journal", async () => {
+    await reserveForOrder(tx(), { orderId: "o1", items: [{ productId: "pA", quantity: 1 }] });
+    await commitOrder(tx(), { orderId: "o1" });
+    await releaseOrder(tx(), { orderId: "o1" });
+    expect(db.calls).toEqual(["lock:o1", "lock:o1", "lock:o1"]);
+  });
+
+  it.each([
+    ["reserve", () => reserveForOrder(tx(), { orderId: "ghost", items: [{ productId: "pA", quantity: 1 }] })],
+    ["release", () => releaseOrder(tx(), { orderId: "ghost" })],
+    ["commit", () => commitOrder(tx(), { orderId: "ghost" })],
+  ])("%s for a non-existent order -> NOT_FOUND, stock untouched", async (_n, call) => {
+    await expect(call()).rejects.toMatchObject({ code: "NOT_FOUND", details: { orderId: "ghost" } });
+    expect(stock("pA")).toBe(5);
+    expect(db.stockChangeLog.rows).toHaveLength(0);
+  });
+
+  it("deleted product: release writes 0 -> 0 (delta 0) with a note, once", async () => {
+    await reserveForOrder(tx(), { orderId: "o1", items: [{ productId: "pA", quantity: 2 }] });
+    db.product.rows.splice(db.product.rows.findIndex((p) => p.id === "pA"), 1);
+    const r = await releaseOrder(tx(), { orderId: "o1" });
+    expect(r.released).toEqual([{ productId: "pA", quantity: 0, stockAfter: 0 }]);
+    const row = db.stockChangeLog.rows.find((x) => x.reason === "RELEASE")!;
+    expect(row).toMatchObject({ oldStock: 0, newStock: 0, delta: 0 });
+    expect(row.productTitle).toContain("товар удалён, 2 шт. не возвращены");
+    expect((await releaseOrder(tx(), { orderId: "o1" })).alreadyReleased).toEqual(["pA"]);
   });
 });
 

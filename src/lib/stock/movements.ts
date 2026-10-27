@@ -9,7 +9,10 @@
 //
 // Конкуренция: резерв — условное UPDATE ... WHERE stock >= qty (атомарно на строку в
 // PostgreSQL), а не «прочитать, проверить, записать». Два заказа на последнюю единицу:
-// второй получает OUT_OF_STOCK. Идемпотентность движений заказа держится на
+// второй получает OUT_OF_STOCK. Все движения ОДНОГО заказа (reserve/release/commit)
+// сериализуются блокировкой строки заказа (SELECT … FOR UPDATE, lockOrder): иначе в
+// READ COMMITTED отмена и оплата одновременно видят «чистый» журнал и обе срабатывают —
+// товар и вернулся на склад, и списан. Идемпотентность движений заказа держится на
 // @@unique([orderId, productId, reason]): повтор того же движения либо видится заранее
 // (вернётся без изменений), либо при гонке падает P2002 и откатывает свою транзакцию —
 // isDuplicateMovement(err) позволяет вызывающему считать это «уже сделано».
@@ -146,6 +149,16 @@ export function normalizeLines(items: OrderLine[]): OrderLine[] {
   );
 }
 
+/**
+ * Блокирует строку заказа до конца транзакции вызывающего. Второе движение того же заказа
+ * ждёт здесь, а затем видит в журнале уже зафиксированный результат первого.
+ * Заказа нет -> NOT_FOUND (движение без заказа — ошибка вызывающего).
+ */
+export async function lockOrder(tx: Tx, orderId: string): Promise<void> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`;
+  if (rows.length === 0) throw new StockError("NOT_FOUND", "Заказ не найден", { orderId });
+}
+
 async function orderMovements(tx: Tx, orderId: string) {
   const rows = await tx.stockChangeLog.findMany({ where: { orderId }, orderBy: { createdAt: "asc" } });
   const has = (productId: string, reason: StockReason) => rows.some((r) => r.productId === productId && r.reason === reason);
@@ -172,6 +185,7 @@ export async function reserveForOrder(
   const lines = normalizeLines(items);
   if (lines.length === 0) throw new StockError("INVALID", "В заказе нет позиций");
 
+  await lockOrder(tx, orderId);
   const existing = await orderMovements(tx, orderId);
   if (existing.reserves.length > 0) {
     return {
@@ -229,6 +243,7 @@ export async function releaseOrder(
   tx: Tx,
   { orderId, source = "PAYMENT_WEBHOOK" }: { orderId: string; source?: StockSource },
 ): Promise<ReleaseResult> {
+  await lockOrder(tx, orderId);
   const m = await orderMovements(tx, orderId);
   const result: ReleaseResult = { released: [], alreadyReleased: [], committed: [] };
   for (const r of m.reserves) {
@@ -247,9 +262,18 @@ export async function releaseOrder(
     });
     const product = await tx.product.findUnique({ where: { id: r.productId } });
     if (!product) {
-      // товар удалён после заказа: возвращать некуда, но факт фиксируем в журнале
-      await writeLog(tx, { product: { id: r.productId, title: r.productTitle }, oldStock: 0, newStock: qty, reason: "RELEASE", source, orderId });
-      result.released.push({ productId: r.productId, quantity: qty, stockAfter: qty });
+      // Товар удалён после заказа: остаток вернуть некуда. Фиксируем факт строкой 0 -> 0
+      // (delta 0 — инвариант Σdelta не нарушается) с пометкой в названии; позицию
+      // считаем закрытой, повторный release её уже не тронет.
+      await writeLog(tx, {
+        product: { id: r.productId, title: `${r.productTitle} (товар удалён, ${qty} шт. не возвращены)` },
+        oldStock: 0,
+        newStock: 0,
+        reason: "RELEASE",
+        source,
+        orderId,
+      });
+      result.released.push({ productId: r.productId, quantity: 0, stockAfter: 0 });
       continue;
     }
     await writeLog(tx, { product, oldStock: product.stock - qty, newStock: product.stock, reason: "RELEASE", source, orderId });
@@ -279,6 +303,7 @@ export async function commitOrder(
   tx: Tx,
   { orderId, source = "PAYMENT_WEBHOOK" }: { orderId: string; source?: StockSource },
 ): Promise<CommitResult> {
+  await lockOrder(tx, orderId);
   const m = await orderMovements(tx, orderId);
   const result: CommitResult = { committed: [], alreadyCommitted: [], releasedBeforePayment: [] };
   for (const r of m.reserves) {

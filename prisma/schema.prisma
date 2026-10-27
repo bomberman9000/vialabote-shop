@@ -241,6 +241,8 @@ model Order {
   items           OrderItem[]
   offerAcceptedAt String?
   pdnConsentAt    String?
+  adsConsentAt    String?
+  consentSource   String?
   legalVersion    String?
   paymentId       String?
   paymentUrl      String?

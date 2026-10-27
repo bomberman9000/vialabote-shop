@@ -33,6 +33,9 @@ async function makeProduct(title: string, slug: string) {
       description: "",
       price: 5000,
       imageUrl: "/images/placeholder.svg",
+      status: "published",
+      isActive: true,
+      stock: 10,
       categoryId,
     },
   });

@@ -14,8 +14,11 @@ const checkoutSchema = z.object({
   deliveryCity: z.string().min(2),
   deliveryAddress: z.string().min(5),
   comment: z.string().optional(),
+  // Оферта — единственное обязательное подтверждение. Согласие на ПДн и рекламное
+  // согласие — отдельные необязательные поля, не условие покупки (ст. 9 152-ФЗ, ст. 18 38-ФЗ).
   offerAccepted: z.literal(true),
-  pdnConsent: z.literal(true),
+  pdnConsent: z.boolean().optional(),
+  adsConsent: z.boolean().optional(),
   items: z
     .array(
       z.object({
@@ -37,31 +40,46 @@ export async function POST(req: Request) {
 
   const session = await getServerSession(authOptions);
 
+  // Дубли одного SKU складываем: иначе одну позицию можно «разбить» и обойти лимит остатка.
+  const wanted = new Map<string, number>();
+  for (const i of data.items) wanted.set(i.productId, (wanted.get(i.productId) ?? 0) + i.quantity);
+
+  // Продаются только опубликованные активные товары с положительной ценой.
   // include: discount — итоговая цена ВСЕГДА пересчитывается сервером через
   // effectivePrice(), а не берётся из клиента (клиент вообще не может
   // передать price — см. checkoutSchema выше, там его нет). Единственный
   // authoritative источник: Product.price + активный Discount из БД.
   const products = await prisma.product.findMany({
-    where: { id: { in: data.items.map((i) => i.productId) } },
+    where: { id: { in: [...wanted.keys()] }, status: "published", isActive: true, price: { gt: 0 } },
     include: { discount: true },
   });
 
-  if (products.length !== data.items.length) {
+  if (products.length !== wanted.size) {
     return NextResponse.json({ error: "Некоторые товары недоступны" }, { status: 400 });
   }
 
-  const orderItems = data.items.map((i) => {
-    const product = products.find((p) => p.id === i.productId)!;
+  // Проверка доступности. Атомарный резерв остатка делает модуль склада
+  // (reserveForOrder) — пока он не подключён, одновременные покупки последней
+  // единицы не защищены от гонки.
+  if (products.some((p) => p.stock < wanted.get(p.id)!)) {
+    return NextResponse.json({ error: "Недостаточно товара на складе" }, { status: 409 });
+  }
+
+  const orderItems = products.map((product) => {
     const priced = effectivePrice(product.price, toDiscountInput(product.discount));
     return {
       productId: product.id,
       title: product.title,
       price: priced.effectivePrice,
-      quantity: i.quantity,
+      quantity: wanted.get(product.id)!,
     };
   });
 
   const totalAmount = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  if (totalAmount <= 0) {
+    return NextResponse.json({ error: "Некорректная сумма заказа" }, { status: 400 });
+  }
+  const now = new Date().toISOString();
   const number = `V-${Date.now().toString(36).toUpperCase()}`;
 
   const order = await prisma.order.create({
@@ -74,8 +92,10 @@ export async function POST(req: Request) {
       deliveryCity: data.deliveryCity,
       deliveryAddress: data.deliveryAddress,
       comment: data.comment,
-      offerAcceptedAt: new Date().toISOString(),
-      pdnConsentAt: new Date().toISOString(),
+      offerAcceptedAt: now,
+      pdnConsentAt: data.pdnConsent ? now : null,
+      adsConsentAt: data.adsConsent ? now : null,
+      consentSource: "WEB_CHECKOUT",
       legalVersion: LEGAL_VERSION,
       totalAmount,
       status: "AWAITING_PAYMENT",

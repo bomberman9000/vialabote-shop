@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/lib/cart-context";
 import { formatPrice } from "@/lib/money";
+import { formatDeliveryDate } from "@/lib/delivery/format";
+import { OzonDelivery, type OzonSelection } from "./ozon-delivery";
 
 export default function CheckoutPage() {
   const { items, totalAmount, clear } = useCart();
@@ -25,6 +27,20 @@ export default function CheckoutPage() {
   const [pdn, setPdn] = useState(false);
   const [ads, setAds] = useState(false);
 
+  // Доставка Ozon показывается, только если она включена на сервере; иначе форма как раньше.
+  const [ozonEnabled, setOzonEnabled] = useState(false);
+  const [mode, setMode] = useState<"OZON_PVZ" | "MANUAL">("OZON_PVZ");
+  const [ozon, setOzon] = useState<OzonSelection | null>(null);
+  const [recipient, setRecipient] = useState({ lastName: "", firstName: "", middleName: "" });
+  useEffect(() => {
+    fetch("/api/delivery/ozon")
+      .then((r) => r.json())
+      .then((d) => setOzonEnabled(d.enabled === true))
+      .catch(() => setOzonEnabled(false));
+  }, []);
+  const useOzon = ozonEnabled && mode === "OZON_PVZ";
+  const deliveryPrice = useOzon && ozon ? ozon.quote.priceKopecks : 0;
+
   if (items.length === 0) {
     return <p className="text-brand-600">Корзина пуста. Добавьте товары в каталоге.</p>;
   }
@@ -40,6 +56,21 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          ...(useOzon && ozon
+            ? {
+                deliveryCity: ozon.point.city ?? "—",
+                deliveryAddress: `Пункт выдачи Ozon: ${ozon.point.address ?? ozon.point.id}`,
+                delivery: {
+                  provider: "OZON",
+                  destination: { type: "PVZ", mapPointId: ozon.point.id },
+                  recipient: {
+                    lastName: recipient.lastName,
+                    firstName: recipient.firstName,
+                    ...(recipient.middleName ? { middleName: recipient.middleName } : {}),
+                  },
+                },
+              }
+            : {}),
           offerAccepted: offer,
           pdnConsent: pdn,
           adsConsent: ads,
@@ -107,20 +138,50 @@ export default function CheckoutPage() {
           value={form.customerPhone}
           onChange={(e) => setForm({ ...form, customerPhone: e.target.value })}
         />
-        <input
-          required
-          placeholder="Город"
-          className="input"
-          value={form.deliveryCity}
-          onChange={(e) => setForm({ ...form, deliveryCity: e.target.value })}
-        />
-        <input
-          required
-          placeholder="Адрес доставки"
-          className="input"
-          value={form.deliveryAddress}
-          onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
-        />
+        {ozonEnabled ? (
+          <fieldset className="flex flex-col gap-2 text-sm">
+            <legend className="mb-1 font-medium text-brand-800">Доставка</legend>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="delivery-mode" checked={mode === "OZON_PVZ"} onChange={() => setMode("OZON_PVZ")} />
+              Ozon — пункт выдачи
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="delivery-mode" checked={mode === "MANUAL"} onChange={() => setMode("MANUAL")} />
+              Согласовать доставку с менеджером
+            </label>
+          </fieldset>
+        ) : null}
+
+        {useOzon ? (
+          <>
+            <OzonDelivery
+              items={items.map((i) => ({ productId: i.productId, quantity: i.quantity }))}
+              onChange={setOzon}
+            />
+            <div className="grid gap-2 sm:grid-cols-3">
+              <input required placeholder="Фамилия получателя" className="input" value={recipient.lastName} onChange={(e) => setRecipient({ ...recipient, lastName: e.target.value })} />
+              <input required placeholder="Имя получателя" className="input" value={recipient.firstName} onChange={(e) => setRecipient({ ...recipient, firstName: e.target.value })} />
+              <input placeholder="Отчество (необязательно)" className="input" value={recipient.middleName} onChange={(e) => setRecipient({ ...recipient, middleName: e.target.value })} />
+            </div>
+          </>
+        ) : (
+          <>
+            <input
+              required
+              placeholder="Город"
+              className="input"
+              value={form.deliveryCity}
+              onChange={(e) => setForm({ ...form, deliveryCity: e.target.value })}
+            />
+            <input
+              required
+              placeholder="Адрес доставки"
+              className="input"
+              value={form.deliveryAddress}
+              onChange={(e) => setForm({ ...form, deliveryAddress: e.target.value })}
+            />
+          </>
+        )}
         <textarea
           placeholder="Комментарий к заказу (необязательно)"
           className="input"
@@ -152,7 +213,7 @@ export default function CheckoutPage() {
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-        <button type="submit" className="btn-primary" disabled={loading || !offer}>
+        <button type="submit" className="btn-primary" disabled={loading || !offer || (useOzon && !ozon)}>
           {loading ? "Оформляем..." : "Оплатить онлайн"}
         </button>
       </form>
@@ -169,9 +230,15 @@ export default function CheckoutPage() {
             </li>
           ))}
         </ul>
+        {useOzon && ozon ? (
+          <div className="mt-2 flex justify-between text-sm text-brand-600">
+            <span>Доставка Ozon, до {formatDeliveryDate(ozon.quote.maxDate)}</span>
+            <span>{formatPrice(deliveryPrice)}</span>
+          </div>
+        ) : null}
         <div className="mt-4 flex justify-between border-t border-brand-100 pt-4 font-semibold text-brand-800">
           <span>Итого</span>
-          <span>{formatPrice(totalAmount)}</span>
+          <span>{formatPrice(totalAmount + deliveryPrice)}</span>
         </div>
       </div>
     </div>

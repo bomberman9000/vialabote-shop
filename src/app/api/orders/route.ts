@@ -1,5 +1,7 @@
+import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,6 +10,10 @@ import { effectivePrice, toDiscountInput } from "@/lib/pricing/effective-price";
 import { createPaymentLink, getTochkaConfig } from "@/lib/tochka";
 import { cancelUnpaidOrder, placeOnlineOrder } from "@/lib/payments/online-order";
 import { reserveForOrder, StockError } from "@/lib/stock/movements";
+import { normalizeRuPhone, OzonError } from "@/lib/delivery/ozon";
+import { allowRequest, checkBuyer, getOzon, isLimited, quoteCart, recordHit } from "@/lib/delivery/ozon-service";
+import { ozonDeliverySchema } from "@/lib/delivery/ozon-http";
+import type { OzonOrderRequest } from "@/lib/delivery/ozon-orders";
 
 const checkoutSchema = z.object({
   customerName: z.string().min(2),
@@ -30,6 +36,8 @@ const checkoutSchema = z.object({
     )
     .min(1)
     .max(50),
+  // Доставка Ozon (необязательно). Без неё заказ оформляется как раньше — адрес свободным текстом.
+  delivery: ozonDeliverySchema.optional(),
 });
 
 export async function POST(req: Request) {
@@ -70,12 +78,70 @@ export async function POST(req: Request) {
     };
   });
 
-  const totalAmount = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  if (totalAmount <= 0 || orderItems.some((i) => i.price <= 0)) {
+  const goodsAmount = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  if (goodsAmount <= 0 || orderItems.some((i) => i.price <= 0)) {
     return NextResponse.json({ error: "Некорректная сумма заказа" }, { status: 400 });
   }
 
-  const number = `V-${Date.now().toString(36).toUpperCase()}`;
+  const tochka = getTochkaConfig();
+
+  // Доставка Ozon: цену и срок считает сервер (v2/delivery/checkout) — сумма заказа сверяется с банком,
+  // поэтому цифрам из браузера не верим. Наложенного платежа у Ozon нет — только с онлайн-оплатой.
+  let ozonDelivery: { price: number; maxDate: Date; method: string; request: OzonOrderRequest; quote: unknown } | null = null;
+  if (data.delivery) {
+    const ozon = getOzon();
+    if (!ozon || !tochka) {
+      return NextResponse.json({ error: "Доставка Ozon сейчас недоступна" }, { status: 400 });
+    }
+    const phone = normalizeRuPhone(data.customerPhone);
+    if (!phone) {
+      return NextResponse.json({ error: "Для доставки Ozon нужен мобильный номер РФ" }, { status: 400 });
+    }
+    const d = data.delivery;
+    if (d.destination.type === "COURIER" && !d.courier) {
+      return NextResponse.json({ error: "Для курьерской доставки нужен адрес" }, { status: 400 });
+    }
+    // Каждая попытка — несколько запросов к Ozon с нашим ключом и проверка номера: ограничиваем частоту
+    // с адреса и отдельно по номеру — не больше 5 ответов «нет аккаунта Ozon» в час, чтобы этот ответ не
+    // стал инструментом перебора. Засчитываются только неудачи: чужие попытки не заблокируют настоящего
+    // владельца номера, у которого аккаунт есть. Остаточный риск — см. docs/ozon-delivery.md.
+    const phoneKey = `ozon-no-account:${phone}`;
+    if (!allowRequest(req, "ozon-order", 10) || isLimited(phoneKey, 5)) {
+      return NextResponse.json({ error: "Слишком много попыток, попробуйте позже" }, { status: 429 });
+    }
+    let quote;
+    try {
+      // Получить заказ Ozon можно только с аккаунтом Ozon на этом номере. Проверяем ДО оплаты и только
+      // номер из самого заказа (публичной проверки произвольного номера нет — это был бы оракул аккаунтов).
+      if (!(await checkBuyer(ozon, phone)).possible) {
+        recordHit(phoneKey, 60 * 60_000);
+        return NextResponse.json(
+          { error: "Для получения в Ozon нужен аккаунт Ozon с этим номером телефона", reason: "NO_OZON_ACCOUNT" },
+          { status: 409 },
+        );
+      }
+      quote = await quoteCart(ozon, { lines: orderItems, destination: d.destination, phone });
+    } catch (err) {
+      if (!(err instanceof OzonError)) throw err;
+      console.error("orders: расчёт доставки Ozon не удался", err.message);
+      return NextResponse.json({ error: "Не удалось рассчитать доставку, попробуйте ещё раз" }, { status: 502 });
+    }
+    if (!quote.available) {
+      return NextResponse.json({ error: "Ozon не доставит этот заказ по выбранному адресу", reason: quote.reason }, { status: 409 });
+    }
+    ozonDelivery = {
+      price: quote.priceKopecks,
+      maxDate: new Date(quote.maxDate),
+      method: d.destination.type === "PVZ" ? "OZON_PVZ" : "OZON_COURIER",
+      request: { destination: d.destination, recipient: { ...d.recipient, phone }, ...(d.courier ? { courier: d.courier } : {}) },
+      quote,
+    };
+  }
+  const totalAmount = goodsAmount + (ozonDelivery?.price ?? 0);
+
+  // Суффикс: два заказа в одну миллисекунду иначе получают один номер, и второй падает на unique.
+  // Без дефиса — номер проверяется как ^V-[A-Z0-9]{4,20}$ (/api/orders/[number]/payment).
+  const number = `V-${Date.now().toString(36).toUpperCase()}${randomBytes(2).toString("hex").toUpperCase()}`;
   // Публичный адрес для возврата из банка. NEXTAUTH_URL читается сервером при запуске;
   // NEXT_PUBLIC_* Next.js вшивает при сборке (на бою там был внутренний 127.0.0.1).
   const appUrl = (process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin).replace(/\/$/, "");
@@ -95,9 +161,22 @@ export async function POST(req: Request) {
     consentSource: "WEB_CHECKOUT",
     legalVersion: LEGAL_VERSION,
     totalAmount,
+    ...(ozonDelivery
+      ? {
+          deliveryMethod: ozonDelivery.method,
+          deliveryPrice: ozonDelivery.price,
+          deliveryMaxDate: ozonDelivery.maxDate,
+          // Заказ в Ozon — только после оплаты (tochka-runtime onOutcome); здесь лишь то, что для него нужно.
+          ozon: {
+            create: {
+              deliveryType: ozonDelivery.request.destination.type,
+              request: ozonDelivery.request as unknown as Prisma.InputJsonValue,
+              quote: ozonDelivery.quote as Prisma.InputJsonValue,
+            },
+          },
+        }
+      : {}),
   };
-
-  const tochka = getTochkaConfig();
 
   // Без эквайринга: заказ NEW (оплата при получении) + резерв остатка одной транзакцией.
   if (!tochka) {
@@ -139,7 +218,13 @@ export async function POST(req: Request) {
       failUrl: `${appUrl}${payPage}`,
     });
     await prisma.order.update({ where: { id: order.id }, data: { paymentId: link.operationId, paymentUrl: link.paymentLink } });
-    return NextResponse.json({ orderId: order.id, orderNumber: order.number, paymentUrl: null, payPage });
+    return NextResponse.json({
+      orderId: order.id,
+      orderNumber: order.number,
+      paymentUrl: null,
+      payPage,
+      ...(ozonDelivery ? { delivery: { priceKopecks: ozonDelivery.price, maxDate: ozonDelivery.maxDate.toISOString() } } : {}),
+    });
   } catch (err) {
     console.error(`[tochka] заказ ${order.number}: ссылка не создана:`, err instanceof Error ? err.message : err);
     // Платёж не создан: заказ отменяем и возвращаем резерв, корзина у покупателя остаётся.

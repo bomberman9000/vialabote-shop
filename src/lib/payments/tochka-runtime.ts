@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getTochkaConfig } from "@/lib/tochka";
 import { syncOrderPayment, sweepExpiredOrders, type OrderRow, type SyncDeps, type SyncOutcome } from "./online-order";
 import { notifyOwner } from "./notify-owner";
+import { ozonAfterPayment } from "@/lib/delivery/ozon-orders";
 
 const lastSync = new Map<string, number>();
 let lastSweep = 0;
@@ -13,6 +14,11 @@ export const SWEEP_MIN_INTERVAL_MS = 30_000;
 
 const onOutcome: SyncDeps["onOutcome"] = (order, outcome) => {
   notifyOwner(order, outcome).catch(() => undefined);
+  // Оплата уже зафиксирована (транзакция PAID закрыта) — теперь, и только теперь, заказ в Ozon.
+  // Сбой Ozon оплату не откатывает; не доведённое здесь доведёт опрос (scripts/ozon/sync.ts).
+  ozonAfterPayment(order.id, outcome).catch((err) =>
+    console.error(`[ozon] заказ ${order.number}:`, err instanceof Error ? err.message : err),
+  );
 };
 
 export async function syncThrottled(order: OrderRow, force = false): Promise<SyncOutcome | "SKIPPED" | "OFF"> {

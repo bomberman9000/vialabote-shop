@@ -9,7 +9,7 @@
 // Статус всегда берётся из API банка (getPaymentOperation), никогда из браузера или тела вебхука.
 // Переходы статуса — условный updateMany в той же транзакции, что и движение склада:
 // параллельные вебхук, страница оплаты и «подметальщик» не могут обработать заказ дважды.
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { commitOrder, releaseOrder, reserveForOrder, type OrderLine, type Tx } from "@/lib/stock/movements";
 import { getPaymentOperation, type FetchLike, type TochkaConfig } from "@/lib/tochka";
 
@@ -48,6 +48,11 @@ export interface NewOrderData {
   adsConsentAt?: string | null;
   consentSource?: string;
   legalVersion?: string;
+  // Доставка Ozon (src/lib/delivery): цена уже в totalAmount; заказ в Ozon создаётся только после оплаты.
+  deliveryMethod?: string;
+  deliveryPrice?: number;
+  deliveryMaxDate?: Date;
+  ozon?: { create: { deliveryType: string; request: Prisma.InputJsonValue; quote: Prisma.InputJsonValue } };
 }
 
 export interface NewOrderItem extends OrderLine {

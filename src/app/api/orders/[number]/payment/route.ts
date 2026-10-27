@@ -34,6 +34,8 @@ export async function GET(_req: Request, { params }: { params: { number: string 
       expiresAt: expiresAt.toISOString(),
       serverNow: new Date().toISOString(),
       paymentUrl: awaiting && Date.now() < expiresAt.getTime() ? order.paymentUrl : null,
+      // Доставка Ozon: крайний срок получения, показанный при оформлении
+      deliveryMaxDate: order.deliveryMethod?.startsWith("OZON_") ? order.deliveryMaxDate?.toISOString() ?? null : null,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

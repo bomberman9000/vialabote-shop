@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCart } from "@/lib/cart-context";
 import { formatPrice } from "@/lib/money";
+import { formatDeliveryDate } from "@/lib/delivery/format";
 
 interface PaymentState {
   number: string;
@@ -13,6 +14,7 @@ interface PaymentState {
   expiresAt: string;
   serverNow: string;
   paymentUrl: string | null;
+  deliveryMaxDate?: string | null;
 }
 
 const WINDOW_SEC = 10 * 60;
@@ -108,13 +110,18 @@ export default function PayPage() {
     );
   }
 
-  if (state.status === "PAID") {
+  // После оплаты заказ идёт дальше (SHIPPED/COMPLETED по статусам Ozon) — это тоже «оплачен».
+  if (["PAID", "PROCESSING", "SHIPPED", "COMPLETED"].includes(state.status)) {
+    const ozonDate = formatDeliveryDate(state.deliveryMaxDate);
     return (
       <Shell>
         <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gold-100 text-5xl text-gold-600">✓</div>
         <h1 className="mt-6 font-display text-3xl text-brand-800">Оплата прошла</h1>
         <p className="mt-2 text-brand-600">
-          Заказ <b>{state.number}</b> на {formatPrice(state.totalAmount)} оплачен. Мы свяжемся с вами, чтобы согласовать доставку.
+          Заказ <b>{state.number}</b> на {formatPrice(state.totalAmount)} оплачен.{" "}
+          {ozonDate
+            ? `Доставка Ozon: получение в пункте выдачи не позднее ${ozonDate}, код получения придёт в приложение Ozon.`
+            : "Мы свяжемся с вами, чтобы согласовать доставку."}
         </p>
         <Link href="/catalog" className="btn-primary mt-8">
           Продолжить покупки

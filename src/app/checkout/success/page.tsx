@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ClearCart } from "@/components/clear-cart";
+import { formatDeliveryDate } from "@/lib/delivery/format";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +14,11 @@ export default async function CheckoutSuccessPage({
 }) {
   const number = searchParams.order;
   const order = number
-    ? await prisma.order.findUnique({ where: { number }, select: { status: true } })
+    ? await prisma.order.findUnique({ where: { number }, select: { status: true, deliveryMethod: true, deliveryMaxDate: true } })
     : null;
-  const paid = order?.status === "PAID";
+  // После оплаты заказ идёт дальше (PROCESSING, когда создан заказ в Ozon) — это тоже «оплачен».
+  const paid = ["PAID", "PROCESSING", "SHIPPED", "COMPLETED"].includes(order?.status ?? "");
+  const ozonDate = order?.deliveryMethod?.startsWith("OZON_") ? formatDeliveryDate(order.deliveryMaxDate) : null;
   const accepted = order?.status === "NEW"; // заказ без онлайн-оплаты
   const cancelled = order?.status === "CANCELLED";
 
@@ -27,7 +30,9 @@ export default async function CheckoutSuccessPage({
       </h1>
       {number ? <p className="text-brand-600">Номер заказа: {number}</p> : null}
       <p className="max-w-md text-brand-600">
-        {paid || accepted
+        {paid && ozonDate
+          ? `Доставка Ozon: получение в пункте выдачи не позднее ${ozonDate}. Код получения придёт в приложение Ozon.`
+          : paid || accepted
           ? "Мы свяжемся с вами для подтверждения деталей доставки."
           : cancelled
             ? "Платёж отменён, деньги не списаны. Товары остались в корзине — можно оформить заказ ещё раз."

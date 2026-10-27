@@ -49,9 +49,9 @@
    `OZON_APP_REDIRECT_URI=https://shop.vialabote.ru/ozon-oauth`, `OZON_APP_SCOPE` (идентификаторы уровней доступа через пробел)
    (+ при желании `OZON_CLIENT_ID`, `OZON_API_KEY` для остатков и отправлений). `OZON_CHECKOUT_ENABLED` пока **не** ставить:
    без него покупатели Ozon не видят, а ключи проверяются скриптами.
-3. Миграция `prisma/migrations/20261027200000_ozon_delivery` (`npx prisma migrate deploy`) — **до** выкладки кода.
-4. Авторизация: `npx tsx scripts/ozon/oauth.ts url` → открыть ссылку (действует 30 мин) в браузере, где вход в кабинет Ozon →
-   согласиться. Ozon вернёт на `/ozon-oauth`: страница проверит подписанный `state`, обменяет `code` и напишет «Ozon подключён».
+3. Миграции `prisma/migrations/20261027200000_ozon_delivery` и `20261027220000_ozon_oauth_state` (`npx prisma migrate deploy`) — **до** выкладки кода.
+4. Авторизация: `npx tsx scripts/ozon/oauth.ts url` → открыть ссылку (одноразовая, 15 мин) в браузере, где вход в кабинет Ozon →
+   согласиться. Ozon вернёт на `/ozon-oauth`: страница погасит одноразовый `state` (таблица `OzonOAuthState`), обменяет `code` и напишет «Ozon подключён».
    Запасной путь — `oauth.ts exchange <code>`. Токены — в таблице `OzonOAuthToken`, на страницу и в консоль не выводятся.
 5. Товары: в `Product.ozonSku` (SKU Ozon) и `Product.ozonOfferId` (артикул) — карточки на Ozon с остатком на FBS-складе.
    Товар без `ozonSku` в доставку Ozon не попадает: расчёт вернёт `NOT_MAPPED`.

@@ -9,7 +9,7 @@
 // OZON_APP_SCOPE (идентификаторы через пробел). Ссылка и обмен — всегда боевое приложение, независимо от OZON_ENV.
 import { prisma } from "@/lib/prisma";
 import { ozonConfig } from "@/lib/delivery/ozon";
-import { authorizeUrl, STATE_TTL_MS } from "@/lib/delivery/ozon-oauth";
+import { authorizeUrl, issueState, STATE_TTL_MS } from "@/lib/delivery/ozon-oauth";
 import { createTokenStore } from "@/lib/delivery/ozon-token";
 
 async function main() {
@@ -30,8 +30,9 @@ async function main() {
 
   if (cmd === "url") {
     const scope = rest.length ? rest.join(" ") : (process.env.OZON_APP_SCOPE ?? "");
-    console.log(authorizeUrl(cfg, scope));
-    console.log(`\nСсылка действует ${STATE_TTL_MS / 60_000} мин. Откройте её в браузере, где выполнен вход в кабинет продавца Ozon,`);
+    authorizeUrl(cfg, scope, "x"); // проверка настроек до записи state в БД
+    console.log(authorizeUrl(cfg, scope, await issueState(prisma, cfg.app.clientSecret)));
+    console.log(`\nСсылка одноразовая и действует ${STATE_TTL_MS / 60_000} мин. Откройте её в браузере, где выполнен вход в кабинет продавца Ozon,`);
     console.log(`и подтвердите доступ. Ozon вернёт на ${cfg.app.redirectUri} — страница сама сохранит токен и напишет «Ozon подключён».`);
     if (!scope) console.log("Внимание: scope пуст. Укажите OZON_APP_SCOPE или передайте идентификаторы аргументами.");
     return;

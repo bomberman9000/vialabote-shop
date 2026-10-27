@@ -1,17 +1,16 @@
 import { prisma } from "@/lib/prisma";
 import { OzonError, ozonConfig } from "@/lib/delivery/ozon";
-import { verifyState } from "@/lib/delivery/ozon-oauth";
+import { consumeState } from "@/lib/delivery/ozon-oauth";
 import { createTokenStore } from "@/lib/delivery/ozon-token";
 import { allowRequest } from "@/lib/delivery/ozon-service";
 
 export const dynamic = "force-dynamic";
 
 // redirect_uri частного приложения Ozon: сюда Ozon возвращает владельца с ?code=…&state=… после согласия.
-// code меняется на токены (в БД, OzonOAuthToken "seller") только при state, подписанном scripts/ozon/oauth.ts url.
+// code меняется на токены (в БД, OzonOAuthToken "seller") только по одноразовому state из scripts/ozon/oauth.ts url
+// (src/lib/delivery/ozon-oauth.ts): state гасится до обмена, повтор того же адреса ничего не меняет.
 // Токены, code и client_secret на страницу и в журнал не попадают. Всегда боевое приложение: песочнице
 // авторизация не нужна (client_credentials), поэтому OZON_ENV здесь не учитывается.
-
-const used = new Map<string, number>(); // state -> когда обменян: обновление страницы не тратит code второй раз
 
 function page(status: number, title: string, text: string): Response {
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -40,23 +39,24 @@ export async function GET(req: Request) {
   }
 
   const q = new URL(req.url).searchParams;
-  const state = q.get("state");
-  if (!verifyState(state, cfg.app.clientSecret)) {
-    return page(400, "Ссылка недействительна", "Ссылка устарела или выдана не этим магазином. Создайте новую: scripts/ozon/oauth.ts url.");
-  }
-  const denied = q.get("error");
-  if (denied) {
-    const code = /^[a-z_]{1,40}$/.test(denied) ? ` (${denied})` : "";
-    return page(400, "Доступ не выдан", `Ozon вернул отказ${code}. Создайте новую ссылку и подтвердите доступ.`);
-  }
-  if (used.has(state!)) return page(200, "Ozon уже подключён", "Код по этой ссылке уже обменян, токен сохранён на сервере.");
   const code = q.get("code");
+  const denied = q.get("error");
+  // Гасим state до обмена: и при отказе, и при сбое ссылка одноразовая — нужна новая.
+  if (!(await consumeState(prisma, q.get("state"), cfg.app.clientSecret))) {
+    return page(
+      400,
+      "Ссылка недействительна",
+      "Ссылка устарела, уже использована или выдана не этим магазином. Если до этого было «Ozon подключён» — всё готово; иначе создайте новую: scripts/ozon/oauth.ts url.",
+    );
+  }
+  if (denied) {
+    const reason = /^[a-z_]{1,40}$/.test(denied) ? ` (${denied})` : "";
+    return page(400, "Доступ не выдан", `Ozon вернул отказ${reason}. Создайте новую ссылку и подтвердите доступ.`);
+  }
   if (!code || code.length > 2048) return page(400, "Нет кода авторизации", "Ozon не передал code. Создайте новую ссылку.");
 
   try {
     const r = await createTokenStore(cfg, { prisma }).exchangeCode(code);
-    used.set(state!, Date.now());
-    for (const [s, at] of used) if (Date.now() - at > 60 * 60_000) used.delete(s);
     console.log("ozon-oauth: токен получен и сохранён");
     return page(
       200,

@@ -336,6 +336,12 @@ model OzonOAuthToken {
   updatedAt    DateTime  @updatedAt
 }
 
+/// Одноразовый state ссылки авторизации Ozon: создаёт scripts/ozon/oauth.ts url, /ozon-oauth удаляет до обмена code.
+model OzonOAuthState {
+  nonce     String   @id
+  createdAt DateTime @default(now())
+}
+
 model OrderItem {
   id        String  @id @default(cuid())
   orderId   String

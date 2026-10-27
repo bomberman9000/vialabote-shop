@@ -4,11 +4,14 @@ export function SellerBlock() {
   return (
     <ul className="list-disc pl-5">
       <li>Продавец: {SELLER.name}</li>
-      <li>ИНН: {SELLER.inn}</li>
-      <li>ОГРН/ОГРНИП: {SELLER.ogrn}</li>
-      <li>Адрес: {SELLER.address}</li>
-      <li>Email: {SELLER.email}</li>
-      <li>Телефон: {SELLER.phone}</li>
+      <li>ИНН/КПП: {SELLER.inn}/{SELLER.kpp}, ОГРН: {SELLER.ogrn}</li>
+      <li>Юридический адрес: {SELLER.legalAddress}</li>
+      <li>Фактический адрес: {SELLER.address}</li>
+      <li>Руководитель: директор {SELLER.director}</li>
+      <li>Email: {SELLER.email}, телефон: {SELLER.phone}</li>
+      <li>
+        Банковские реквизиты: р/с {SELLER.account} в {SELLER.bank}, к/с {SELLER.corrAccount}, БИК {SELLER.bik}
+      </li>
     </ul>
   );
 }

@@ -19,8 +19,8 @@ export function Footer() {
           <h3 className="mb-2 font-semibold text-brand-50">Контакты</h3>
           <p>Email: {SELLER.email}</p>
           <p>Тел.: {SELLER.phone}</p>
-          <p className="mt-2">{SELLER.name}</p>
-          <p>ИНН {SELLER.inn}, ОГРН {SELLER.ogrn}</p>
+          <p className="mt-2">{SELLER.shortName}</p>
+          <p>ИНН/КПП {SELLER.inn}/{SELLER.kpp}, ОГРН {SELLER.ogrn}</p>
           <p>{SELLER.address}</p>
         </div>
         <div>

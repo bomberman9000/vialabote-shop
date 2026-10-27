@@ -6,13 +6,23 @@ const TODO = (what: string) => `[УКАЗАТЬ: ${what}]`;
 
 // Реквизиты продавца берутся из переменных окружения. Пока они не заданы,
 // на сайте видны явные заглушки — выдумывать реквизиты нельзя.
+// Реквизиты из карточки организации ООО «БОТЭ».
 export const SELLER = {
-  name: process.env.NEXT_PUBLIC_SELLER_NAME || TODO("наименование ИП/ООО"),
-  inn: process.env.NEXT_PUBLIC_SELLER_INN || TODO("ИНН"),
-  ogrn: process.env.NEXT_PUBLIC_SELLER_OGRN || TODO("ОГРН/ОГРНИП"),
-  address: process.env.NEXT_PUBLIC_SELLER_ADDRESS || TODO("адрес"),
-  email: process.env.NEXT_PUBLIC_SELLER_EMAIL || "hello@vialabote.ru",
-  phone: process.env.NEXT_PUBLIC_SELLER_PHONE || TODO("телефон"),
+  name: "Общество с ограниченной ответственностью «БОТЭ» (ООО «БОТЭ»)",
+  shortName: "ООО «БОТЭ»",
+  inn: "6312211664",
+  kpp: "631201001",
+  ogrn: "1226300007405",
+  legalAddress:
+    "443044, Самарская область, г.о. Самара, Кировский р-н, п. Зубчаниновка, ул. Товарная, д. 70, комната 8",
+  address: "443076, Самарская область, г.о. Самара, Советский район, ул. Мориса-Тореза, 103",
+  email: "botecosmetic@mail.ru",
+  phone: "+7 903 303-38-75",
+  director: "Шаталова Елена Геннадьевна",
+  bank: "ООО «БАНК ТОЧКА»",
+  account: "40702810002500138835",
+  corrAccount: "30101810745374525104",
+  bik: "044525104",
 };
 
 export const DELIVERY_TERMS =

@@ -23,6 +23,7 @@ adjustStock(tx: Tx, args: { productId: string; expectedVersion: number; newStock
   actorUserId?: string; actorTelegramUserId?: string; confirmationId?: string }) : Promise<{ before; after }>
 
 class StockError extends Error { code: "OUT_OF_STOCK" | "NOT_FOUND" | "VERSION_CONFLICT" | "INVALID"; details: Record<string, unknown> }
+lockOrder(tx: Tx, orderId: string): Promise<void>   // вызывается внутри трёх функций заказа; снаружи не нужен
 isDuplicateMovement(err: unknown): boolean   // P2002 на (orderId, productId, reason): движение уже сделано параллельно
 ```
 
@@ -36,6 +37,8 @@ isDuplicateMovement(err: unknown): boolean   // P2002 на (orderId, productId, 
 | `adjustStock` | выставить `newStock` при совпадении `version` | `ADJUST`, `orderId = null` | — (защита — OCC) |
 
 - **Нехватка.** `OUT_OF_STOCK` нельзя ловить внутри `$transaction`: пусть она выйдет наружу. Тогда откатится всё — заказ и уже сделанные резервы других позиций.
+- **Блокировка заказа.** Каждая из трёх функций заказа первым делом делает `SELECT "id" FROM "Order" WHERE "id" = $1 FOR UPDATE` (`lockOrder`). Движения одного заказа идут строго по очереди: отмена, пришедшая во время оплаты, ждёт и видит уже записанный `WRITE_OFF`. Заказа с таким `orderId` нет — `StockError("NOT_FOUND")`, поэтому заказ создаётся в той же транзакции **до** `reserveForOrder` (как в примере ниже). Проверено на PostgreSQL 18 (`src/lib/stock/movements.pg.test.ts`): без блокировки 3 теста гонок падают.
+- **Удалённый товар** при `releaseOrder`: строка `RELEASE` с `0 → 0` (delta 0) и пометкой в `productTitle`, остаток вернуть некуда.
 - **Позиции заказа** склеиваются по `productId` и сортируются: все заказы блокируют строки в одном порядке.
 - **`version++` при резерве и возврате** — намеренно. Предпросмотр правки остатка в боте, сделанный до заказа, после резерва не перезапишет остаток: ответ будет «Товар изменился».
 - **Заказы, созданные до этой логики** (без `RESERVE`): `releaseOrder` и `commitOrder` вернут пустой результат, без ошибки.

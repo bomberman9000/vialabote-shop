@@ -3,6 +3,7 @@ import "./globals.css";
 import { CartProvider } from "@/lib/cart-context";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
+import { CookieBanner } from "@/components/cookie-banner";
 import { AuthProvider } from "@/components/auth-provider";
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Header />
             <main className="mx-auto min-h-[70vh] max-w-6xl px-4 py-8">{children}</main>
             <Footer />
+            <CookieBanner />
           </CartProvider>
         </AuthProvider>
       </body>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/lib/cart-context";
 import { formatPrice } from "@/lib/money";
@@ -20,6 +21,9 @@ export default function CheckoutPage() {
     comment: "",
   });
 
+  const [offer, setOffer] = useState(false);
+  const [pdn, setPdn] = useState(false);
+
   if (items.length === 0) {
     return <p className="text-brand-600">Корзина пуста. Добавьте товары в каталоге.</p>;
   }
@@ -35,6 +39,8 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          offerAccepted: offer,
+          pdnConsent: pdn,
           items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
         }),
       });
@@ -108,9 +114,18 @@ export default function CheckoutPage() {
           onChange={(e) => setForm({ ...form, comment: e.target.value })}
         />
 
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={offer} onChange={(e) => setOffer(e.target.checked)} className="mt-1" />
+          <span>Я принимаю условия <Link href="/offer" target="_blank" className="underline">публичной оферты</Link></span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={pdn} onChange={(e) => setPdn(e.target.checked)} className="mt-1" />
+          <span>Я даю согласие на обработку персональных данных в соответствии с <Link href="/privacy" target="_blank" className="underline">Политикой</Link></span>
+        </label>
+
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-        <button type="submit" className="btn-primary" disabled={loading}>
+        <button type="submit" className="btn-primary" disabled={loading || !offer || !pdn}>
           {loading ? "Оформляем..." : "Оплатить онлайн"}
         </button>
       </form>

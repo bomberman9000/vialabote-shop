@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { LEGAL_VERSION } from "@/lib/legal";
 import { createPayment } from "@/lib/yookassa";
 
 const checkoutSchema = z.object({
@@ -12,6 +13,8 @@ const checkoutSchema = z.object({
   deliveryCity: z.string().min(2),
   deliveryAddress: z.string().min(5),
   comment: z.string().optional(),
+  offerAccepted: z.literal(true),
+  pdnConsent: z.literal(true),
   items: z
     .array(
       z.object({
@@ -63,6 +66,9 @@ export async function POST(req: Request) {
       deliveryCity: data.deliveryCity,
       deliveryAddress: data.deliveryAddress,
       comment: data.comment,
+      offerAcceptedAt: new Date().toISOString(),
+      pdnConsentAt: new Date().toISOString(),
+      legalVersion: LEGAL_VERSION,
       totalAmount,
       status: "AWAITING_PAYMENT",
       items: { create: orderItems },

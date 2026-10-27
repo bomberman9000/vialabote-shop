@@ -70,6 +70,9 @@ model Order {
   comment         String?
   totalAmount     Int // копейки
   items           OrderItem[]
+  offerAcceptedAt String?
+  pdnConsentAt    String?
+  legalVersion    String?
   paymentId       String?
   paymentUrl      String?
   createdAt       DateTime    @default(now())

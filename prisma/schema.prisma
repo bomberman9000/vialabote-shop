@@ -196,6 +196,26 @@ model AuditLog {
   createdAt  DateTime @default(now())
 }
 
+// Журнал изменений остатков: кто, когда, было, стало. Не имеет FK на Product/User
+// намеренно — запись должна пережить удаление товара/пользователя. Пишется в той же
+// транзакции, что и сама правка stock (см. src/lib/admin/commands/stock.ts).
+model StockChangeLog {
+  id                  String   @id @default(cuid())
+  productId           String
+  productTitle        String // снимок названия на момент правки
+  oldStock            Int
+  newStock            Int
+  delta               Int
+  source              String // "TELEGRAM" | "WEB_ADMIN"
+  actorUserId         String? // внутренний User.id (ADMIN)
+  actorTelegramUserId String? // числовой Telegram user id, если правка из бота
+  confirmationId      String? // PendingConfirmation, по которому подтверждена правка
+  createdAt           DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([createdAt])
+}
+
 // Telegram confirmation workflow: команда сначала предлагается (preview) и
 // сохраняется здесь, исполняется ТОЛЬКО после явного подтверждения. Модель
 // должна самостоятельно доказывать все 5 гарантий, а не полагаться на

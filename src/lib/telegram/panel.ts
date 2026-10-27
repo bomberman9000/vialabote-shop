@@ -1,7 +1,8 @@
-// Telegram CMS V2 — read-only admin panel. Every screen here is a pure READ of Prisma:
-// no create/update/delete/upsert, no transactions, no command layer. The route decides
-// who may see a screen (ADMIN by Telegram user id, private chats only); this module only
-// renders text + inline keyboards.
+// Telegram CMS panel — screens. Every screen here is a pure READ of Prisma:
+// no create/update/delete/upsert, no transactions, no command layer. Writes live in
+// panel-actions.ts / input-handler.ts and always go through confirmation + the admin commands.
+// The route decides who may see a screen (owner id, private chats only); this module only
+// renders text + inline keyboards. Screens get `canWrite` to show or hide the edit buttons.
 //
 // Text is sent WITHOUT parse_mode, so product titles/customer cities need no escaping and
 // cannot inject markup. Orders show number/date/status/total/city only — no phone, e-mail
@@ -11,12 +12,13 @@ import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/money";
 import { ORDER_STATUSES } from "@/lib/constants";
+import { buildAction } from "./callbacks";
+import { computeStats, formatStats, periodRange, PERIODS, PERIOD_LABEL, type Period } from "./stats";
 
 export const PAGE_SIZE = 10;
 export const LOW_STOCK = 5;
 const MAX_TEXT = 3800; // Telegram limit is 4096 characters
 const PLACEHOLDER_IMAGE = "/images/placeholder.svg";
-const REVENUE_STATUSES = ["PAID", "PROCESSING", "SHIPPED", "COMPLETED"];
 
 export type InlineKeyboard = { text: string; callback_data: string }[][];
 export interface PanelScreen {
@@ -94,18 +96,19 @@ function date(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function menuScreen(): PanelScreen {
+export function menuScreen(canWrite = false): PanelScreen {
   const rows: InlineKeyboard = [];
   for (let i = 0; i < MENU_BUTTONS.length; i += 2) {
     rows.push(MENU_BUTTONS.slice(i, i + 2).map((b) => ({ text: b.label, callback_data: cb(b.id) })));
   }
   rows.push([{ text: "📉 Остатки", callback_data: cb("stock") }]);
-  return { text: "VIA LABOTE — панель магазина (только просмотр).\nВыберите раздел:", keyboard: rows };
+  const title = canWrite ? "VIA LABOTE — панель магазина." : "VIA LABOTE — панель магазина (только просмотр).";
+  return { text: `${title}\nВыберите раздел:`, keyboard: rows };
 }
 
-export function helpText(): string {
+export function helpText(canWrite = false): string {
   return [
-    "VIA LABOTE — Telegram-панель магазина. Режим: только просмотр.",
+    `VIA LABOTE — Telegram-панель магазина. Режим: ${canWrite ? "просмотр и правки с подтверждением" : "только просмотр"}.`,
     "",
     "Команды:",
     "/start или /menu — главное меню",
@@ -113,15 +116,24 @@ export function helpText(): string {
     "«показать товары без INCI» — список товаров без состава",
     "",
     "Разделы меню: товары и статусы, остатки, заказы, составы INCI, проблемы каталога, статистика, настройки.",
-    "Изменить цены, товары, заказы, остатки или настройки через Telegram нельзя — используйте Web Admin.",
+    ...(canWrite
+      ? [
+          "Правки: «Товары» или «Остатки» → выберите товар → остаток (кнопки +/− или число), название, цена, описание, INCI, фото, видимость.",
+          "Каждая правка сначала показывается «было → станет» и применяется только после кнопки «Подтвердить».",
+        ]
+      : ["Изменить цены, товары, заказы, остатки или настройки через Telegram сейчас нельзя — используйте Web Admin."]),
   ].join("\n");
+}
+
+function productButtons(rows: { id: string; title: string; stock: number }[]): InlineKeyboard {
+  return rows.map((p) => [{ text: `${p.title.length > 34 ? `${p.title.slice(0, 33)}…` : p.title} · ${p.stock}`, callback_data: buildAction({ op: "card", productId: p.id }) }]);
 }
 
 async function productsScreen(page: number): Promise<PanelScreen> {
   const total = await prisma.product.count();
   page = clampPage(page, total);
   const rows = await prisma.product.findMany({
-    select: { title: true, status: true, price: true, stock: true },
+    select: { id: true, title: true, status: true, price: true, stock: true },
     orderBy: [{ status: "asc" }, { title: "asc" }],
     skip: page * PAGE_SIZE,
     take: PAGE_SIZE,
@@ -132,8 +144,8 @@ async function productsScreen(page: number): Promise<PanelScreen> {
     (p, i) => `${page * PAGE_SIZE + i + 1}. ${p.title} — ${STATUS_RU[p.status] ?? p.status}, ${formatPrice(p.price)}, остаток ${p.stock}`,
   );
   return {
-    text: clip([`📦 Товары (${total}; ${summary || "нет"})`, "", ...(lines.length ? lines : ["Товаров нет."])].join("\n")),
-    keyboard: pager("products", page, total),
+    text: clip([`📦 Товары (${total}; ${summary || "нет"})`, "", ...(lines.length ? lines : ["Товаров нет."]), "", "Нажмите товар, чтобы открыть карточку."].join("\n")),
+    keyboard: [...productButtons(rows), ...pager("products", page, total)],
   };
 }
 
@@ -143,7 +155,7 @@ async function stockScreen(page: number): Promise<PanelScreen> {
   page = clampPage(page, total);
   const rows = await prisma.product.findMany({
     where,
-    select: { title: true, stock: true, status: true },
+    select: { id: true, title: true, stock: true, status: true },
     orderBy: [{ stock: "asc" }, { title: "asc" }],
     skip: page * PAGE_SIZE,
     take: PAGE_SIZE,
@@ -159,9 +171,16 @@ async function stockScreen(page: number): Promise<PanelScreen> {
         `нет в наличии: ${out}, мало (<${LOW_STOCK}): ${low}`,
         "",
         ...(lines.length ? lines : ["Товаров нет."]),
+        "",
+        "Нажмите товар, чтобы изменить остаток.",
       ].join("\n"),
     ),
-    keyboard: pager("stock", page, total),
+    keyboard: [
+      ...rows.map((p) => [
+        { text: `${p.stock <= 0 ? "⛔" : p.stock < LOW_STOCK ? "🟡" : "🟢"} ${p.title.length > 30 ? `${p.title.slice(0, 29)}…` : p.title} · ${p.stock}`, callback_data: buildAction({ op: "stockEdit", productId: p.id, draft: p.stock }) },
+      ]),
+      ...pager("stock", page, total),
+    ],
   };
 }
 
@@ -253,37 +272,29 @@ async function problemsScreen(page: number): Promise<PanelScreen> {
   };
 }
 
-async function statsScreen(now: Date): Promise<PanelScreen> {
-  const since = (days: number) => new Date(now.getTime() - days * 86_400_000);
-  const [byStatus, orderByStatus, revenueAll, revenue30, orders7, orders30, customers, stockUnits] = await Promise.all([
-    prisma.product.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.order.groupBy({ by: ["status"], _count: { _all: true } }),
-    prisma.order.aggregate({ where: { status: { in: REVENUE_STATUSES } }, _sum: { totalAmount: true }, _count: { _all: true } }),
-    prisma.order.aggregate({ where: { status: { in: REVENUE_STATUSES }, createdAt: { gte: since(30) } }, _sum: { totalAmount: true }, _count: { _all: true } }),
-    prisma.order.count({ where: { createdAt: { gte: since(7) } } }),
-    prisma.order.count({ where: { createdAt: { gte: since(30) } } }),
-    prisma.user.count({ where: { role: "CUSTOMER" } }),
-    prisma.product.aggregate({ where: { status: { not: "archived" } }, _sum: { stock: true } }),
+export function statsKeyboard(current: Period): InlineKeyboard {
+  return [
+    PERIODS.map((p) => ({ text: `${p === current ? "● " : ""}${PERIOD_LABEL[p][0].toUpperCase()}${PERIOD_LABEL[p].slice(1)}`, callback_data: buildAction({ op: "stats", period: p }) })),
+    backRow(),
+  ];
+}
+
+export async function statsScreen(period: Period, now: Date): Promise<PanelScreen> {
+  const { from, days } = periodRange(period, now);
+  const prevFrom = new Date(from.getTime() - days * 86_400_000);
+  const [orders, products] = await Promise.all([
+    prisma.order.findMany({
+      where: { createdAt: { gte: prevFrom } },
+      select: { createdAt: true, status: true, totalAmount: true, items: { select: { productId: true, title: true, quantity: true, price: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 10_000,
+    }),
+    prisma.product.findMany({ select: { id: true, title: true, stock: true, status: true } }),
   ]);
-  const productLine = byStatus.map((s) => `${STATUS_RU[s.status] ?? s.status} ${s._count._all}`).join(", ") || "нет";
-  const orderCounts = new Map(orderByStatus.map((s) => [s.status, s._count._all]));
-  const orderLine = ORDER_STATUSES.filter((s) => orderCounts.get(s)).map((s) => `${ORDER_STATUS_RU[s]} ${orderCounts.get(s)}`).join(", ") || "нет";
-  const paidCount = revenueAll._count._all;
-  const avg = paidCount ? Math.round((revenueAll._sum.totalAmount ?? 0) / paidCount) : 0;
+  const report = computeStats(orders, products, period, now);
   return {
-    text: [
-      "📊 Статистика",
-      "",
-      `Товары: ${productLine}`,
-      `Единиц на складе (активные): ${stockUnits._sum.stock ?? 0}`,
-      `Заказы: ${orderLine}`,
-      `Заказов за 7 дней: ${orders7}, за 30 дней: ${orders30}`,
-      `Выручка (оплаченные и далее): ${formatPrice(revenueAll._sum.totalAmount ?? 0)} в ${paidCount} заказах`,
-      `Выручка за 30 дней: ${formatPrice(revenue30._sum.totalAmount ?? 0)} в ${revenue30._count._all} заказах`,
-      `Средний чек: ${formatPrice(avg)}`,
-      `Покупателей с аккаунтом: ${customers}`,
-    ].join("\n"),
-    keyboard: [backRow()],
+    text: clip(formatStats(report, { money: formatPrice, status: ORDER_STATUS_RU, statusOrder: ORDER_STATUSES })),
+    keyboard: statsKeyboard(period),
   };
 }
 
@@ -295,15 +306,16 @@ function releaseCommit(): string {
   }
 }
 
-async function settingsScreen(): Promise<PanelScreen> {
+async function settingsScreen(canWrite: boolean): Promise<PanelScreen> {
   const linkedAdmins = await prisma.user.count({ where: { role: "ADMIN", telegramUserId: { not: null } } });
   return {
     text: [
-      "⚙️ Настройки (только просмотр)",
+      `⚙️ Настройки${canWrite ? "" : " (только просмотр)"}`,
       "",
-      "Режим Telegram-панели: только чтение",
-      "Изменение цен, товаров, заказов, остатков и настроек через Telegram: запрещено в коде",
-      "Доступ: только ADMIN, по числовому Telegram ID, только в личном чате",
+      `Режим Telegram-панели: ${canWrite ? "просмотр и правки с подтверждением (остатки, карточки товаров)" : "только чтение"}`,
+      `Запись: ${canWrite ? "включена" : "выключена — нужен TELEGRAM_ADMIN_IDS с вашим id и привязка к ADMIN"}`,
+      "Заказы и настройки через Telegram не меняются — только Web Admin",
+      "Доступ: только владелец по числовому Telegram ID (TELEGRAM_ADMIN_IDS), только в личном чате",
       `Администраторов с привязанным Telegram: ${linkedAdmins}`,
       `Релиз сайта: ${releaseCommit()}`,
       "Изменения — через Web Admin.",
@@ -313,10 +325,10 @@ async function settingsScreen(): Promise<PanelScreen> {
 }
 
 /** Render a screen. Read-only by construction: only findMany/count/aggregate/groupBy. */
-export async function renderScreen(screen: ScreenId, page = 0, now = new Date()): Promise<PanelScreen> {
+export async function renderScreen(screen: ScreenId, page = 0, now = new Date(), canWrite = false): Promise<PanelScreen> {
   switch (screen) {
     case "menu":
-      return menuScreen();
+      return menuScreen(canWrite);
     case "products":
       return productsScreen(page);
     case "stock":
@@ -328,8 +340,8 @@ export async function renderScreen(screen: ScreenId, page = 0, now = new Date())
     case "problems":
       return problemsScreen(page);
     case "stats":
-      return statsScreen(now);
+      return statsScreen("week", now);
     case "settings":
-      return settingsScreen();
+      return settingsScreen(canWrite);
   }
 }

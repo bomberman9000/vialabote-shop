@@ -218,7 +218,7 @@ describe("telegram-poller — end to end through the real webhook route and comm
     const { impl, calls } = viaRoute();
     const s = await handleUpdate(cfg, msgUpdate(2, UNLINKED_TG, "показать товары без INCI"), { fetchImpl: impl });
     expect(s.auth).toBe("denied");
-    expect(String(calls[1].body.text)).toContain("не привязан");
+    expect(String(calls[1].body.text)).toContain("Нет доступа");
   });
 
   it.each([undefined, "enabled"])("catalog mutations stay off (TELEGRAM_CMS_MUTATIONS=%s): no confirmation is created", async (flag) => {

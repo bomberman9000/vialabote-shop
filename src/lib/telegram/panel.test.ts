@@ -5,6 +5,7 @@ import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import { POST } from "@/app/api/telegram/webhook/route";
 import { SCREENS, cb, isMenuCommand, menuScreen, parseCallback, catalogProblems, renderScreen } from "./panel";
+import { parseAction } from "./callbacks";
 
 const SECRET = "panel-test-secret";
 const suffix = Date.now();
@@ -142,7 +143,7 @@ describe("panel — through the real webhook route (DB)", () => {
 
   it.each([CUSTOMER_TG, STRANGER_TG])("/start for a non-admin id %s: refused, no menu", async (tg) => {
     const body = await (await post(message(tg, "/start"))).json();
-    expect(body.text).toContain("не привязан");
+    expect(body.text).toContain("Нет доступа");
     expect(body.reply_markup).toBeUndefined();
   });
 
@@ -171,7 +172,7 @@ describe("panel — through the real webhook route (DB)", () => {
     expect(body.text.length).toBeGreaterThan(0);
     expect(body.text.length).toBeLessThanOrEqual(4096);
     for (const b of body.reply_markup.inline_keyboard.flat()) {
-      expect(parseCallback(b.callback_data)).not.toBeNull();
+      expect(parseCallback(b.callback_data) ?? parseAction(b.callback_data)).not.toBeNull();
       expect(Buffer.byteLength(b.callback_data)).toBeLessThanOrEqual(64);
     }
   });

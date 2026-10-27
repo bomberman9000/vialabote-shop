@@ -6,6 +6,7 @@ import { authorizeAdmin } from "../authorize";
 import { writeAuditLog } from "../audit";
 import { AdminCommandError } from "../errors";
 import { buildLifecycleFields, canTransition, isProductStatus, type ProductStatus } from "../product-lifecycle";
+import { adjustStock, StockError } from "@/lib/stock/movements";
 
 // ---- Explicit allowlisted input contracts (никакого arbitrary payload) ----
 
@@ -34,6 +35,10 @@ const updateProductSchema = z.object({
   howToUse: z.string().max(2000).optional(),
   volume: z.string().max(50).optional(),
   badge: z.string().max(50).optional(),
+  warnings: z.string().max(2000).optional(),
+  shelfLife: z.string().max(100).optional(),
+  manufacturer: z.string().max(200).optional(),
+  categoryId: z.string().min(1).optional(),
   stock: z.number().int().min(0).optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
@@ -159,11 +164,26 @@ export async function updateProduct(actor: AdminActor, rawInput: unknown) {
   await authorizeAdmin(actor);
   const input = updateProductSchema.parse(rawInput);
   const before = await loadProductForWrite(input.productId, input.expectedVersion);
+  if (input.categoryId && !(await prisma.category.findUnique({ where: { id: input.categoryId } }))) {
+    throw new AdminCommandError("NOT_FOUND", "Категория не найдена");
+  }
 
-  const { productId, expectedVersion, ...fields } = input;
+  const { productId, expectedVersion, stock, ...fields } = input;
 
   return prisma.$transaction(async (tx) => {
-    const after = await applyOptimisticUpdate(tx, productId, expectedVersion, fields);
+    // Остаток меняется ТОЛЬКО через журнал склада (одна таблица движений для сайта, оплаты и бота):
+    // adjustStock проверяет version и пишет StockChangeLog ADJUST; остальные поля — следующей версией.
+    let version = expectedVersion;
+    if (stock !== undefined && stock !== before.stock) {
+      try {
+        await adjustStock(tx, { productId, expectedVersion: version, newStock: stock, source: actor.source, actorUserId: actor.userId });
+      } catch (err) {
+        if (err instanceof StockError) throw new AdminCommandError(err.code === "VERSION_CONFLICT" ? "VERSION_CONFLICT" : "VALIDATION", err.message, err.details);
+        throw err;
+      }
+      version += 1;
+    }
+    const after = await applyOptimisticUpdate(tx, productId, version, fields);
     await writeAuditLog(tx, actor, {
       action: "UPDATE_PRODUCT",
       entityType: "Product",

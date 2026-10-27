@@ -9,7 +9,13 @@ import { resolveTelegramActor, toAdminActor } from "./actor-resolver";
 import { createPendingConfirmation, consumeConfirmation, cancelConfirmation } from "./confirmation-service";
 import { isTelegramMutationsEnabled, TELEGRAM_MUTATIONS_DISABLED_MESSAGE } from "./config";
 import { inciMissingText } from "./panel";
-import { setPrice, setDiscount, publishProduct, archiveProduct } from "@/lib/admin/commands/product";
+import { isAdminListConfigured, isInAdminList } from "./access";
+import { downloadTelegramFile, TelegramDownloadError } from "./file-download";
+import { FIELD_COLUMN } from "./card-edit";
+import { setPrice, setDiscount, publishProduct, archiveProduct, unpublishToDraft, updateProduct } from "@/lib/admin/commands/product";
+import { setStock } from "@/lib/admin/commands/stock";
+import { attachMedia } from "@/lib/admin/commands/media";
+import { LocalMediaStorage } from "@/lib/media/local-storage";
 import { effectivePrice } from "@/lib/pricing/effective-price";
 import { formatPrice } from "@/lib/money";
 
@@ -98,7 +104,18 @@ function prepareMutation(intent: ParsedCommand, product: ProductCandidate, now: 
   }
 }
 
-async function runMutationCommand(actorTelegramUserId: string, commandType: string, payload: Record<string, unknown>) {
+/** Список владельцев задан -> остальным нельзя даже текстовые команды (даже если они ADMIN в БД). */
+function deniedByOwnerList(actorTelegramUserId: string): boolean {
+  return isAdminListConfigured() && !isInAdminList(actorTelegramUserId);
+}
+
+
+async function runMutationCommand(
+  actorTelegramUserId: string,
+  commandType: string,
+  payload: Record<string, unknown>,
+  confirmationId?: string,
+): Promise<string> {
   const resolved = await resolveTelegramActor(actorTelegramUserId);
   if (!resolved) {
     throw new AdminCommandError("FORBIDDEN", "Telegram-аккаунт не привязан к администратору");
@@ -107,20 +124,55 @@ async function runMutationCommand(actorTelegramUserId: string, commandType: stri
 
   switch (commandType) {
     case "SET_PRICE":
-      return setPrice(actor, payload);
+      await setPrice(actor, payload);
+      return "Цена обновлена.";
+    case "SET_STOCK": {
+      const after = await setStock(actor, payload, { actorTelegramUserId, confirmationId });
+      return `Остаток «${after.title}» обновлён: теперь ${after.stock} шт. Запись добавлена в журнал.`;
+    }
+    case "EDIT_FIELD": {
+      const field = String(payload.field);
+      const column = (FIELD_COLUMN as Record<string, string>)[field];
+      if (!column) throw new AdminCommandError("VALIDATION", "Это поле нельзя менять через Telegram");
+      await updateProduct(actor, { productId: payload.productId, expectedVersion: payload.expectedVersion, [column]: payload.value });
+      return "Карточка обновлена.";
+    }
+    case "EDIT_CATEGORY":
+      await updateProduct(actor, { productId: payload.productId, expectedVersion: payload.expectedVersion, categoryId: payload.categoryId });
+      return "Категория обновлена.";
+    case "SET_VISIBILITY": {
+      const base = { productId: payload.productId, expectedVersion: payload.expectedVersion };
+      if (payload.to === "published") await publishProduct(actor, base);
+      else if (payload.to === "draft") await unpublishToDraft(actor, base);
+      else if (payload.to === "archived") await archiveProduct(actor, base);
+      else throw new AdminCommandError("VALIDATION", "Неизвестная видимость");
+      return "Видимость обновлена.";
+    }
+    case "SET_PHOTO": {
+      const bytes = await downloadTelegramFile(String(payload.fileId));
+      await attachMedia(actor, new LocalMediaStorage(), bytes, {
+        purpose: "PRODUCT_PRIMARY",
+        productId: payload.productId,
+        isPrimary: true,
+      });
+      return "Главное фото заменено.";
+    }
     case "SET_DISCOUNT":
       // payload прошёл через JSON.stringify/parse внутри PendingConfirmation —
       // Date стал ISO-строкой, а setDiscount's Zod-схема требует z.date().
       // Восстанавливаем Date здесь, в единственном месте десериализации.
-      return setDiscount(actor, {
+      await setDiscount(actor, {
         ...payload,
         startsAt: payload.startsAt ? new Date(payload.startsAt as string) : null,
         endsAt: payload.endsAt ? new Date(payload.endsAt as string) : null,
       });
+      return "Готово.";
     case "PUBLISH_PRODUCT":
-      return publishProduct(actor, payload);
+      await publishProduct(actor, payload);
+      return "Готово.";
     case "ARCHIVE_PRODUCT":
-      return archiveProduct(actor, payload);
+      await archiveProduct(actor, payload);
+      return "Готово.";
     default:
       throw new AdminCommandError("VALIDATION", `Неизвестный тип команды: ${commandType}`);
   }
@@ -129,7 +181,7 @@ async function runMutationCommand(actorTelegramUserId: string, commandType: stri
 /** Шаг 1: разбор + resolve + preview. НИЧЕГО не мутирует. */
 export async function prepareCommand(actorTelegramUserId: string, rawText: string): Promise<DispatchResult> {
   const resolvedActor = await resolveTelegramActor(actorTelegramUserId);
-  if (!resolvedActor || resolvedActor.role !== "ADMIN") {
+  if (!resolvedActor || resolvedActor.role !== "ADMIN" || deniedByOwnerList(actorTelegramUserId)) {
     return { kind: "not_authorized" };
   }
 
@@ -199,6 +251,9 @@ export async function executeConfirmation(actorTelegramUserId: string, confirmat
   if (!isTelegramMutationsEnabled()) {
     return { ok: false, message: TELEGRAM_MUTATIONS_DISABLED_MESSAGE };
   }
+  if (deniedByOwnerList(actorTelegramUserId)) {
+    return { ok: false, message: "Нет доступа." };
+  }
 
   let consumed;
   try {
@@ -216,10 +271,11 @@ export async function executeConfirmation(actorTelegramUserId: string, confirmat
   };
 
   try {
-    await runMutationCommand(actorTelegramUserId, confirmation.commandType, payload);
-    return { ok: true, message: "Готово." };
+    const message = await runMutationCommand(actorTelegramUserId, confirmation.commandType, payload, confirmationId);
+    return { ok: true, message };
   } catch (err) {
     if (err instanceof AdminCommandError) return { ok: false, message: err.message };
+    if (err instanceof TelegramDownloadError) return { ok: false, message: err.message };
     throw err;
   }
 }

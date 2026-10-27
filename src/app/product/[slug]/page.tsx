@@ -64,6 +64,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
 
   const actives = parseLines(product.activeIngredients);
   const howToUseSteps = parseLines(product.howToUse);
+  const warnings = parseLines(product.warnings);
   const displayPrice = resolveDisplayPrice(product);
   // «Для кого» — только из реальных связей товара (типы кожи/потребности),
   // ничего не додумывается; блок не показывается, если связей нет.
@@ -199,6 +200,33 @@ export default async function ProductPage({ params }: { params: { slug: string }
                   </li>
                 ))}
               </ol>
+            </PdpRow>
+          ) : null}
+          {warnings.length > 0 ? (
+            <PdpRow title="Предупреждения">
+              <ul className="flex max-w-[62ch] list-disc flex-col gap-2 pl-5 text-[15px] leading-relaxed text-brand-700">
+                {warnings.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </PdpRow>
+          ) : null}
+          {product.shelfLife?.trim() || product.manufacturer?.trim() ? (
+            <PdpRow title="О товаре">
+              <dl className="grid gap-4 sm:grid-cols-2">
+                {product.shelfLife?.trim() ? (
+                  <div className="flex flex-col gap-1">
+                    <dt className="text-sm font-bold text-brand-900">Срок годности</dt>
+                    <dd className="text-sm leading-relaxed text-brand-600">{product.shelfLife}</dd>
+                  </div>
+                ) : null}
+                {product.manufacturer?.trim() ? (
+                  <div className="flex flex-col gap-1">
+                    <dt className="text-sm font-bold text-brand-900">Производитель</dt>
+                    <dd className="text-sm leading-relaxed text-brand-600">{product.manufacturer}</dd>
+                  </div>
+                ) : null}
+              </dl>
             </PdpRow>
           ) : null}
           <PdpRow title="Доставка и оплата">

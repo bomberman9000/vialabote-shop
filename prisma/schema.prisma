@@ -53,6 +53,13 @@ model Product {
   // Контентные поля для PDP — каждый пункт с новой строки, формат "Название — описание".
   activeIngredients String?
   howToUse          String?
+  // Карточка товара (редактируется в Web Admin и Telegram-панели, показывается на PDP).
+  warnings          String? // предупреждения и противопоказания, каждый пункт с новой строки
+  // Срок годности — СТРОКА, а не DateTime: у косметики это свойство товара
+  // ("24 месяца, после вскрытия 12 месяцев"), а не одна дата; дата истечения
+  // конкретной партии — это учёт партий, его в модели нет.
+  shelfLife         String?
+  manufacturer      String? // производитель (юрлицо/бренд, страна)
   volume            String? // напр. "50 мл"
   badge             String? // напр. "Хит продаж", "Новинка"
   // Routine Finder: место товара в уходе. routineRole — не медицинское значение,
@@ -194,6 +201,33 @@ model AuditLog {
   before     String? // JSON.stringify — SQLite без нативного Json
   after      String? // JSON.stringify
   createdAt  DateTime @default(now())
+}
+
+// Журнал движений склада: ЕДИНСТВЕННЫЙ журнал для сайта и бота. Каждое изменение
+// Product.stock (ручная правка, резерв заказом, возврат резерва, списание при оплате)
+// пишет строку здесь в той же транзакции (src/lib/stock/movements.ts). Без FK на
+// Product/User/Order намеренно — запись должна пережить удаление товара/пользователя.
+// Инвариант: Product.stock(сейчас) = stock(до первой строки) + сумма delta по товару.
+model StockChangeLog {
+  id                  String   @id @default(cuid())
+  productId           String
+  productTitle        String // снимок названия на момент движения
+  oldStock            Int
+  newStock            Int
+  delta               Int // RESERVE < 0, RELEASE > 0, WRITE_OFF = 0, ADJUST — любой
+  reason              String   @default("ADJUST") // "ADJUST" | "RESERVE" | "RELEASE" | "WRITE_OFF"
+  orderId             String? // для RESERVE/RELEASE/WRITE_OFF; null для ADJUST
+  source              String // "TELEGRAM" | "WEB_ADMIN" | "SITE_ORDER" | "PAYMENT_WEBHOOK"
+  actorUserId         String? // внутренний User.id (ADMIN), если правка ручная
+  actorTelegramUserId String? // числовой Telegram user id, если правка из бота
+  confirmationId      String? // PendingConfirmation, по которому подтверждена правка
+  createdAt           DateTime @default(now())
+
+  // Идемпотентность движений заказа: один RESERVE/RELEASE/WRITE_OFF на (заказ, товар).
+  // Для ADJUST orderId = NULL, а NULL в unique-индексе PostgreSQL не конфликтуют.
+  @@unique([orderId, productId, reason])
+  @@index([productId, createdAt])
+  @@index([createdAt])
 }
 
 // Telegram confirmation workflow: команда сначала предлагается (preview) и

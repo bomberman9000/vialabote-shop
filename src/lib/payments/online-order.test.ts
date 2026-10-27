@@ -138,6 +138,26 @@ describe("syncOrderPayment", () => {
   });
 });
 
+describe("owner notification hook", () => {
+  it("fires exactly once on PAID, never on a repeat or while waiting", async () => {
+    const o = await order(2);
+    const seen: string[] = [];
+    const onOutcome = (_o: OrderRow, r: string) => seen.push(r);
+    await syncOrderPayment(db as never, o, { cfg, fetchImpl: bank("CREATED", 3000).fetchImpl, now: at(1000), onOutcome });
+    await syncOrderPayment(db as never, o, { cfg, fetchImpl: bank("APPROVED", 3000).fetchImpl, onOutcome });
+    await syncOrderPayment(db as never, fresh(o), { cfg, fetchImpl: bank("APPROVED", 3000).fetchImpl, onOutcome });
+    expect(seen).toEqual(["PAID"]);
+  });
+});
+
+describe("sweep confirms a paid order even if the buyer never came back", () => {
+  it("young AWAITING order paid at the bank -> PAID by the sweep", async () => {
+    const o = await order(1, at(-60_000));
+    expect(await sweepExpiredOrders(db as never, { cfg, fetchImpl: bank("APPROVED", 1500).fetchImpl, now: T0 })).toBe(1);
+    expect(fresh(o).status).toBe("PAID");
+  });
+});
+
 describe("sweepExpiredOrders", () => {
   it("cancels only orders past their 10 minutes and returns their stock", async () => {
     const old = await order(1, at(-PAYMENT_WINDOW_MS - 60_000));

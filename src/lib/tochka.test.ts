@@ -60,7 +60,7 @@ describe("createPaymentLink", () => {
       amount: 2490,
       purpose: "Оплата заказа V-1",
       paymentMode: ["card", "sbp"],
-      successRedirectUrl: "https://s/ok",
+      redirectUrl: "https://s/ok",
       failRedirectUrl: "https://s/fail",
     });
   });

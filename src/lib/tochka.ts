@@ -106,7 +106,7 @@ export async function createPaymentLink(cfg: TochkaConfig, input: CreateLinkInpu
           amount: rublesFromKopecks(input.amountKopecks),
           purpose: input.purpose.slice(0, 210),
           paymentMode: ["card", "sbp"],
-          successRedirectUrl: input.successUrl,
+          redirectUrl: input.successUrl, // поле банка — redirectUrl; successRedirectUrl банк молча отбрасывает
           failRedirectUrl: input.failUrl,
           ...(cfg.merchantId ? { merchantId: cfg.merchantId } : {}),
         },

@@ -103,10 +103,24 @@ export interface SyncDeps {
   cfg: TochkaConfig;
   fetchImpl?: FetchLike;
   now?: Date;
+  /** Вызывается ровно один раз на переход (PAID / PAID_LATE) и на AMOUNT_MISMATCH — для уведомления владельца. */
+  onOutcome?: (order: OrderRow, outcome: SyncOutcome) => void;
 }
 
 /** Сверить заказ с банком и выполнить положенный переход. Безопасно вызывать сколько угодно раз и параллельно. */
 export async function syncOrderPayment(db: Db, order: OrderRow, deps: SyncDeps): Promise<SyncOutcome> {
+  const outcome = await syncOnce(db, order, deps);
+  if (deps.onOutcome && (outcome === "PAID" || outcome === "PAID_LATE" || outcome === "AMOUNT_MISMATCH")) {
+    try {
+      deps.onOutcome(order, outcome);
+    } catch {
+      /* уведомление не должно ломать оплату */
+    }
+  }
+  return outcome;
+}
+
+async function syncOnce(db: Db, order: OrderRow, deps: SyncDeps): Promise<SyncOutcome> {
   const now = deps.now ?? new Date();
   if (order.status !== "AWAITING_PAYMENT" && order.status !== "CANCELLED") return "UNCHANGED";
   if (!order.paymentId) {
@@ -151,11 +165,15 @@ export async function syncOrderPayment(db: Db, order: OrderRow, deps: SyncDeps):
   return order.status === "AWAITING_PAYMENT" ? "WAITING" : "UNCHANGED";
 }
 
-/** Отменить заказы, у которых вышло время, — даже если покупатель закрыл вкладку. */
+/**
+ * Сверить с банком все заказы, ждущие оплаты (запускается таймером раз в минуту): оплаченные -> PAID,
+ * просроченные неоплаченные -> CANCELLED с возвратом товара. Работает, даже если покупатель закрыл
+ * вкладку и банк не вернул его на сайт.
+ */
 export async function sweepExpiredOrders(db: Db, deps: SyncDeps, limit = 20): Promise<number> {
   const now = deps.now ?? new Date();
   const stale = await db.order.findMany({
-    where: { status: "AWAITING_PAYMENT", createdAt: { lt: new Date(now.getTime() - PAYMENT_WINDOW_MS) } },
+    where: { status: "AWAITING_PAYMENT" },
     orderBy: { createdAt: "asc" },
     take: limit,
   });

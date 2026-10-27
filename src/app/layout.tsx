@@ -4,6 +4,7 @@ import { CartProvider } from "@/lib/cart-context";
 import { Header } from "@/components/header";
 import { TopBar } from "@/components/top-bar";
 import { Footer } from "@/components/footer";
+import { CookieBanner } from "@/components/cookie-banner";
 import { AuthProvider } from "@/components/auth-provider";
 import { RoutineFinderProvider } from "@/components/routine-finder/routine-finder-context";
 import { RoutineFinderWidget } from "@/components/routine-finder/routine-finder-widget";
@@ -44,6 +45,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <main className="mx-auto min-h-[70vh] max-w-7xl px-4 py-8">{children}</main>
               <Footer />
               <RoutineFinderWidget />
+              <CookieBanner />
             </RoutineFinderProvider>
           </CartProvider>
         </AuthProvider>

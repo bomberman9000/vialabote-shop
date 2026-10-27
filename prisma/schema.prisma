@@ -275,6 +275,12 @@ model Order {
   items           OrderItem[]
   paymentId       String?
   paymentUrl      String?
+  // Согласия покупателя (152-ФЗ): момент (ISO), источник, версия документов
+  offerAcceptedAt String?
+  pdnConsentAt    String?
+  adsConsentAt    String?
+  consentSource   String?
+  legalVersion    String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 }

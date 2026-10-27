@@ -42,6 +42,12 @@ export interface NewOrderData {
   deliveryAddress: string;
   comment?: string;
   totalAmount: number;
+  // согласия (152-ФЗ / 38-ФЗ): ISO-время отметки или null
+  offerAcceptedAt?: string;
+  pdnConsentAt?: string | null;
+  adsConsentAt?: string | null;
+  consentSource?: string;
+  legalVersion?: string;
 }
 
 export interface NewOrderItem extends OrderLine {

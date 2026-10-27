@@ -33,6 +33,9 @@ async function makeProduct(title: string, slug: string) {
       description: "",
       price: 5000,
       imageUrl: "/images/placeholder.svg",
+      status: "published",
+      isActive: true,
+      stock: 10,
       categoryId,
     },
   });
@@ -285,6 +288,8 @@ describe("Telegram preview vs checkout — единая effectivePrice()", () =>
         customerPhone: "+70000000000",
         deliveryCity: "Москва",
         deliveryAddress: "Тестовая, 1",
+        offerAccepted: true,
+        pdnConsent: true,
         items: [{ productId: product.id, quantity: 1 }],
       }),
     });

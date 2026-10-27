@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/lib/cart-context";
 import { formatPrice } from "@/lib/money";
@@ -20,6 +21,10 @@ export default function CheckoutPage() {
     comment: "",
   });
 
+  const [offer, setOffer] = useState(false);
+  const [pdn, setPdn] = useState(false);
+  const [ads, setAds] = useState(false);
+
   if (items.length === 0) {
     return <p className="text-brand-600">Корзина пуста. Добавьте товары в каталоге.</p>;
   }
@@ -35,10 +40,20 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          offerAccepted: offer,
+          pdnConsent: pdn,
+          adsConsent: ads,
           items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
         }),
       });
       const data = await res.json();
+
+      if (data.paymentError) {
+        // Банк не открыл оплату: заказ отменён, резерв снят — корзину не трогаем, можно повторить.
+        setError("Не удалось открыть оплату. Попробуйте ещё раз через минуту.");
+        setLoading(false);
+        return;
+      }
 
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Не удалось оформить заказ. Проверьте данные и попробуйте снова.");
@@ -46,18 +61,17 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Онлайн-оплата: корзину не очищаем, пока банк не подтвердит оплату — если время выйдет,
-      // покупатель вернётся в корзину и оформит заново (страница оплаты очистит её после PAID).
+      // Онлайн-оплата: страница с таймером 10 минут. Корзину очистит она — после подтверждения банком.
       if (data.payPage) {
         router.push(data.payPage);
         return;
       }
 
-      clear();
-
       if (data.paymentUrl) {
+        // Корзина очищается на странице успеха только после подтверждения оплаты.
         window.location.href = data.paymentUrl;
       } else {
+        clear();
         router.push(`/checkout/success?order=${data.orderNumber}`);
       }
     } catch {
@@ -115,9 +129,30 @@ export default function CheckoutPage() {
           onChange={(e) => setForm({ ...form, comment: e.target.value })}
         />
 
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={offer} onChange={(e) => setOffer(e.target.checked)} className="mt-1" />
+          <span>
+            Я ознакомился(-ась) с <Link href="/offer" target="_blank" className="underline">публичной офертой</Link> и{" "}
+            <Link href="/returns" target="_blank" className="underline">условиями доставки и возврата</Link>
+          </span>
+        </label>
+        <p className="text-xs text-brand-500">
+          Данные для заказа обрабатываются по{" "}
+          <Link href="/privacy" target="_blank" className="underline">Политике обработки персональных данных</Link>.
+          Дополнительные согласия ниже необязательны и не влияют на оформление заказа.
+        </p>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={pdn} onChange={(e) => setPdn(e.target.checked)} className="mt-1" />
+          <span>Даю согласие на обработку персональных данных, как описано в Политике (необязательно)</span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={ads} onChange={(e) => setAds(e.target.checked)} className="mt-1" />
+          <span>Согласен(-на) получать рекламные предложения VIA LABOTE по e-mail. Отписаться можно в любой момент; не является условием покупки.</span>
+        </label>
+
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-        <button type="submit" className="btn-primary" disabled={loading}>
+        <button type="submit" className="btn-primary" disabled={loading || !offer}>
           {loading ? "Оформляем..." : "Оплатить онлайн"}
         </button>
       </form>

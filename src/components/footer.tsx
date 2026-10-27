@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SELLER, DELIVERY_TERMS, RETURN_TERMS } from "@/lib/legal";
+import { SELLER } from "@/lib/legal";
 
 export function Footer() {
   return (
@@ -11,9 +11,7 @@ export function Footer() {
         </div>
         <div>
           <h3 className="mb-2 font-semibold text-brand-50">Доставка и оплата</h3>
-          <p>Онлайн-оплата картой через ЮKassa.</p>
-          <p className="mt-2">{DELIVERY_TERMS}</p>
-          <p className="mt-2">{RETURN_TERMS}</p>
+          <p>Доставка по России. Условия оплаты, доставки и возврата — на странице «<Link href="/returns" className="underline">Доставка и возврат</Link>».</p>
         </div>
         <div>
           <h3 className="mb-2 font-semibold text-brand-50">Контакты</h3>
@@ -27,6 +25,7 @@ export function Footer() {
           <h3 className="mb-2 font-semibold text-brand-50">Документы</h3>
           <p><Link href="/offer" className="underline">Публичная оферта</Link></p>
           <p><Link href="/privacy" className="underline">Политика обработки ПДн</Link></p>
+          <p><Link href="/returns" className="underline">Доставка, оплата и возврат</Link></p>
         </div>
       </div>
       <p className="mt-8 text-center text-xs text-brand-400">

@@ -1,25 +1,8 @@
-import { LegalShell, SellerBlock } from "@/components/legal-doc";
-import { SELLER } from "@/lib/legal";
+import { LegalDocument } from "@/lib/legal-render";
+import { PRIVACY_MD } from "@/content/legal/privacy";
 
 export const metadata = { title: "Политика обработки персональных данных — Vialabote" };
 
-export default function PrivacyPage() {
-  return (
-    <LegalShell title="Политика обработки персональных данных">
-      <h2 className="text-lg font-semibold">1. Оператор</h2>
-      <SellerBlock />
-      <h2 className="text-lg font-semibold">2. Какие данные обрабатываются</h2>
-      <p>Имя, email, телефон, город и адрес доставки, состав заказа, комментарий, данные об использовании сайта (cookie — только с вашего согласия).</p>
-      <h2 className="text-lg font-semibold">3. Цели и основания</h2>
-      <p>Заключение и исполнение договора купли-продажи, доставка, оплата, связь с покупателем. Основание — согласие субъекта (ст. 9 152-ФЗ) и исполнение договора.</p>
-      <h2 className="text-lg font-semibold">4. Сроки и передача третьим лицам</h2>
-      <p>Данные хранятся в течение срока исполнения договора и срока, установленного законом. Данные могут передаваться платёжному сервису ЮKassa и службам доставки в объёме, необходимом для исполнения заказа.</p>
-      <h2 className="text-lg font-semibold">5. Права субъекта</h2>
-      <p>Вы вправе получить сведения об обработке, потребовать уточнения, блокирования или удаления данных, отозвать согласие, направив запрос на {SELLER.email}.</p>
-      <h2 className="text-lg font-semibold">6. Cookie</h2>
-      <p>Необходимые cookie (корзина, вход) используются всегда. Аналитические cookie и трекеры загружаются только после нажатия «Принять» в cookie-баннере; выбор можно изменить, очистив данные сайта в браузере.</p>
-      <h2 className="text-lg font-semibold">7. Локализация</h2>
-      <p>Первичная запись и хранение персональных данных граждан РФ осуществляются на серверах, расположенных на территории Российской Федерации.</p>
-    </LegalShell>
-  );
+export default function Page() {
+  return <LegalDocument title="Политика обработки персональных данных VIA LABOTE" source={PRIVACY_MD} />;
 }

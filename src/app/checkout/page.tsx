@@ -23,6 +23,7 @@ export default function CheckoutPage() {
 
   const [offer, setOffer] = useState(false);
   const [pdn, setPdn] = useState(false);
+  const [ads, setAds] = useState(false);
 
   if (items.length === 0) {
     return <p className="text-brand-600">Корзина пуста. Добавьте товары в каталоге.</p>;
@@ -41,6 +42,7 @@ export default function CheckoutPage() {
           ...form,
           offerAccepted: offer,
           pdnConsent: pdn,
+          adsConsent: ads,
           items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
         }),
       });
@@ -123,16 +125,28 @@ export default function CheckoutPage() {
 
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" checked={offer} onChange={(e) => setOffer(e.target.checked)} className="mt-1" />
-          <span>Я принимаю условия <Link href="/offer" target="_blank" className="underline">публичной оферты</Link></span>
+          <span>
+            Я ознакомился(-ась) с <Link href="/offer" target="_blank" className="underline">публичной офертой</Link> и{" "}
+            <Link href="/returns" target="_blank" className="underline">условиями доставки и возврата</Link>
+          </span>
         </label>
+        <p className="text-xs text-brand-500">
+          Данные для заказа обрабатываются по{" "}
+          <Link href="/privacy" target="_blank" className="underline">Политике обработки персональных данных</Link>.
+          Дополнительные согласия ниже необязательны и не влияют на оформление заказа.
+        </p>
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" checked={pdn} onChange={(e) => setPdn(e.target.checked)} className="mt-1" />
-          <span>Я даю согласие на обработку персональных данных в соответствии с <Link href="/privacy" target="_blank" className="underline">Политикой</Link></span>
+          <span>Даю согласие на обработку персональных данных, как описано в Политике (необязательно)</span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={ads} onChange={(e) => setAds(e.target.checked)} className="mt-1" />
+          <span>Согласен(-на) получать рекламные предложения VIA LABOTE по e-mail. Отписаться можно в любой момент; не является условием покупки.</span>
         </label>
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-        <button type="submit" className="btn-primary" disabled={loading || !offer || !pdn}>
+        <button type="submit" className="btn-primary" disabled={loading || !offer}>
           {loading ? "Оформляем..." : "Оплатить онлайн"}
         </button>
       </form>

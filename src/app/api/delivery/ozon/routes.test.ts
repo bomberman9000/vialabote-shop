@@ -15,6 +15,7 @@ vi.mock("@/lib/delivery/ozon-token", () => ({
 const status = await import("./route");
 const points = await import("./points/route");
 const info = await import("./points/info/route");
+const search = await import("./points/search/route");
 const map = await import("./map/route");
 const quote = await import("./quote/route");
 const webhook = await import("./webhook/route");
@@ -107,6 +108,49 @@ describe("ПВЗ и карта", () => {
     await info.GET(get("/api/delivery/ozon/points/info?ids=3,7"));
     expect(fake.bodies("/v1/delivery/point/info")).toEqual([{ map_point_ids: ["1", "3"] }, { map_point_ids: ["7"] }]);
     expect((await info.GET(get("/api/delivery/ozon/points/info?ids=abc"))).status).toBe(400);
+  });
+
+  it("поиск по улице: адреса пунктов у центра города; дом — целиком; дальние и выключенные не попадают; кеш", async () => {
+    on();
+    const STREET = {
+      points: [
+        ...POINTS.points,
+        { map_point_id: 4, coordinate: { lat: 53.24, long: 50.2 } }, // Самара, ~8 км
+        { map_point_id: 5, coordinate: { lat: 53.2, long: 50.11 } }, // Самара, пункт выключен
+      ],
+    };
+    const addr: Record<number, string> = {
+      1: "Россия, Самарская Область, Самара, улица Свободы, 2",
+      3: "Россия, Самарская Область, Самара, улица Ленина, 5",
+      4: "Россия, Самарская Область, Самара, улица Свободы, 20",
+      5: "Россия, Самарская Область, Самара, улица Свободы, 3",
+    };
+    const fake = fakeFetch({
+      "/v1/delivery/point/list": () => ({ body: STREET }),
+      "/v1/delivery/point/info": (b) => ({
+        body: {
+          points: b.map_point_ids.map((id: string) => {
+            const c = card(Number(id));
+            return { ...c, enabled: id !== "5", delivery_method: { ...c.delivery_method, address: addr[Number(id)] } };
+          }),
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fake.fetch);
+    const find = async (q: string) =>
+      (await (await search.GET(get(`/api/delivery/ozon/points/search?lat=53.2&long=50.1&q=${encodeURIComponent(q)}`))).json()).points;
+
+    const street = await find("Свободы");
+    expect(street.map((p: { id: string }) => p.id)).toEqual(["1", "4"]);
+    expect(street[0]).toEqual(expect.objectContaining({ address: addr[1], storageDays: 14 }));
+    expect(street[0].distanceKm).toBeLessThan(street[1].distanceKm);
+    expect((await find("ул. Свободы, д. 2")).map((p: { id: string }) => p.id)).toEqual(["1"]);
+    expect(await find("Гагарина")).toEqual([]);
+    // Москва дальше радиуса — её карточку у Ozon не спрашиваем; повторные поиски — из кеша.
+    expect(fake.bodies("/v1/delivery/point/info")).toEqual([{ map_point_ids: ["1", "5", "3", "4"] }]);
+
+    expect((await search.GET(get("/api/delivery/ozon/points/search?lat=53.2&long=50.1&q=ул."))).status).toBe(400);
+    expect((await search.GET(get("/api/delivery/ozon/points/search?lat=53.2&long=50.1"))).status).toBe(400);
   });
 
   it("карта: кластеры с кешем по округлённой области", async () => {

@@ -15,6 +15,7 @@ import {
   type Viewport,
 } from "./ozon";
 import { createTokenStore } from "./ozon-token";
+import { matchesAddress } from "./address-match";
 
 export interface Ozon {
   cfg: OzonConfig;
@@ -173,6 +174,31 @@ export async function pointCards(ozon: Ozon, ids: string[]): Promise<PickupPoint
   }
   const cards = await Promise.all(unique.map((id) => cached<PickupPointCard | null>(`point:${id}`, INFO_TTL, async () => null)));
   return cards.filter((c): c is PickupPointCard => c !== null);
+}
+
+/** Где искать пункты по улице: ближайшие к центру города, не дальше радиуса. Холодный поиск — до 10 запросов point/info. */
+const STREET_SCAN = 1000;
+const STREET_RADIUS_KM = 40;
+
+/**
+ * Пункты на улице (и доме) из запроса — среди ближайших к центру города. Адреса берутся из карточек пунктов
+ * (кеш 1 ч на карточку), поэтому повторный поиск в том же городе в Ozon не ходит.
+ */
+export async function pointsOnStreet(ozon: Ozon, at: LatLong, query: string, limit = 50) {
+  const near = (await allPoints(ozon))
+    .map((p) => ({ id: p.id, km: distanceKm(at, p) }))
+    .filter((p) => p.km <= STREET_RADIUS_KM)
+    .sort((a, b) => a.km - b.km)
+    .slice(0, STREET_SCAN);
+  const km = new Map(near.map((p) => [p.id, Math.round(p.km * 10) / 10]));
+  const chunks: string[][] = [];
+  for (let i = 0; i < near.length; i += 100) chunks.push(near.slice(i, i + 100).map((p) => p.id));
+  const cards = (await Promise.all(chunks.map((ids) => pointCards(ozon, ids)))).flat();
+  return cards
+    .filter((c) => c.enabled && c.address && matchesAddress(c.address, query))
+    .map((c) => ({ ...c, distanceKm: km.get(c.id) ?? null }))
+    .sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0))
+    .slice(0, limit);
 }
 
 /** Кластеры ПВЗ для карты. Ключ кеша — область, округлённая до ~1 км, и масштаб. */

@@ -10,6 +10,8 @@ import type { MapTiles } from "@/lib/delivery/map-tiles";
 /** Мельче этого масштаба отметок слишком много — просим приблизить. */
 const MIN_ZOOM = 12;
 const START_ZOOM = 14;
+/** Уже этого карта — телефон: масштаб пальцами, без кнопок «+/−» (они перекрывали подпись пункта). */
+const NARROW = 400;
 const COLOR = "#232c54"; // brand-700
 const SELECTED = "#b8893a"; // gold-500
 
@@ -70,7 +72,20 @@ export function OzonMap({
     if (!m || !L || !p || typeof p.lat !== "number" || typeof p.long !== "number") return;
     const at: [number, number] = [p.lat, p.long];
     if (!m.getBounds().contains(at) || m.getZoom() < MIN_ZOOM) m.setView(at, Math.max(m.getZoom(), START_ZOOM));
-    popup.current = L.popup({ offset: [0, -8], closeButton: false, autoClose: false, closeOnClick: false })
+    // На телефоне карта ~270 px, а подпись Leaflet по умолчанию до 300 px + поля — шире карты и обрезается.
+    // Кнопки «+/−» лежат поверх подписей: на широкой карте держим подпись правее них.
+    const narrow = m.getSize().x < NARROW;
+    const width = Math.max(120, Math.min(300, m.getSize().x - (narrow ? 72 : 120)));
+    popup.current = L.popup({
+      offset: [0, -8],
+      maxWidth: width,
+      minWidth: Math.min(160, width),
+      autoPanPaddingTopLeft: narrow ? [8, 8] : [52, 8],
+      autoPanPaddingBottomRight: [8, 24],
+      closeButton: false,
+      autoClose: false,
+      closeOnClick: false,
+    })
       .setLatLng(at)
       .setContent(caption(p))
       .openOn(m);
@@ -83,7 +98,11 @@ export function OzonMap({
     void import("leaflet").then(({ default: L }) => {
       if (cancelled || !box.current) return;
       // Без подписи-префикса Leaflet: остаётся только обязательное упоминание источника данных.
-      const m = L.map(box.current, { attributionControl: false, maxZoom: tiles.maxZoom }).setView(
+      const m = L.map(box.current, {
+        attributionControl: false,
+        zoomControl: box.current.clientWidth >= NARROW,
+        maxZoom: tiles.maxZoom,
+      }).setView(
         [center.lat, center.long],
         Math.min(START_ZOOM, tiles.maxZoom),
       );

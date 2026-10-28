@@ -11,6 +11,7 @@ import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 import { concernTitle } from "@/lib/concerns";
 import { ProductGallery } from "@/components/product-gallery";
 import { Reveal } from "@/components/reveal";
+import { productShareImage } from "@/lib/share-image";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,23 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const product = await prisma.product.findUnique({ where: { slug: params.slug } });
   if (!product) return {};
+  const title = `${product.title} — Via Labote`;
+  const description = product.subtitle || product.description;
+  const image = productShareImage(product.imageUrl, product.title);
+  // openGraph страницы целиком заменяет общий из layout — siteName и locale повторяем.
   return {
-    title: `${product.title} — Via Labote`,
-    description: product.subtitle || product.description,
+    title,
+    description,
+    openGraph: {
+      type: "website",
+      siteName: "VIA LABOTE",
+      locale: "ru_RU",
+      url: `/product/${product.slug}`,
+      title,
+      description,
+      images: [image],
+    },
+    twitter: { card: "summary_large_image", title, description, images: [image.url] },
   };
 }
 

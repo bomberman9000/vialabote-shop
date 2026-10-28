@@ -4,15 +4,32 @@ import { CartProvider } from "@/lib/cart-context";
 import { Header } from "@/components/header";
 import { TopBar } from "@/components/top-bar";
 import { Footer } from "@/components/footer";
+import { CookieBanner } from "@/components/cookie-banner";
 import { AuthProvider } from "@/components/auth-provider";
 import { RoutineFinderProvider } from "@/components/routine-finder/routine-finder-context";
 import { RoutineFinderWidget } from "@/components/routine-finder/routine-finder-widget";
 import { getRoutineProducts } from "@/lib/get-routine-products";
 import { getSearchProducts } from "@/lib/get-search-products";
+import { SHARE_IMAGE, SITE_URL } from "@/lib/share-image";
+
+const TITLE = "Vialabote — интернет-магазин косметики";
+const DESCRIPTION = "Собственный интернет-магазин Vialabote: уход и косметика с доставкой по России.";
 
 export const metadata: Metadata = {
-  title: "Vialabote — интернет-магазин косметики",
-  description: "Собственный интернет-магазин Vialabote: уход и косметика с доставкой по России.",
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  // Превью ссылки в Telegram / WhatsApp / VK: без og:image мессенджер показывает голую ссылку.
+  openGraph: {
+    type: "website",
+    siteName: "VIA LABOTE",
+    locale: "ru_RU",
+    url: "/",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [SHARE_IMAGE],
+  },
+  twitter: { card: "summary_large_image", title: TITLE, description: DESCRIPTION, images: [SHARE_IMAGE.url] },
   // Знак VIA LABOTE (public/branding/vialabote-favicon.png) -> scripts/media/favicons.mjs.
   // Только эти ссылки: стандартного favicon Next (app/favicon.ico) в проекте нет.
   icons: {
@@ -44,6 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <main className="mx-auto min-h-[70vh] max-w-7xl px-4 py-8">{children}</main>
               <Footer />
               <RoutineFinderWidget />
+              <CookieBanner />
             </RoutineFinderProvider>
           </CartProvider>
         </AuthProvider>

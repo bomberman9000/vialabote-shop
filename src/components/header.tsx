@@ -4,8 +4,9 @@ import { useId, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowRight, Search, UserRound, ShoppingBag, Menu, X } from "lucide-react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useCart } from "@/lib/cart-context";
+import { SignOutButton } from "@/components/sign-out-button";
 import { RoutineFinderTrigger } from "@/components/routine-finder/routine-finder-trigger";
 import { useRoutineFinder } from "@/components/routine-finder/routine-finder-context";
 import { AccessibleDialog } from "@/components/routine-finder/accessible-dialog";
@@ -96,12 +97,7 @@ export function Header({ searchProducts }: { searchProducts: SearchProduct[] }) 
             ) : null}
           </Link>
           {session?.user ? (
-            <button
-              onClick={() => signOut({ callbackUrl: "/" })}
-              className="ml-2 hidden text-xs text-brand-400 transition-colors hover:text-gold-500 xl:block"
-            >
-              Выйти
-            </button>
+            <SignOutButton className="ml-2 hidden text-xs text-brand-400 transition-colors hover:text-gold-500 xl:block" />
           ) : null}
         </div>
       </div>
@@ -155,13 +151,7 @@ export function Header({ searchProducts }: { searchProducts: SearchProduct[] }) 
             Корзина{totalCount > 0 ? ` · ${totalCount}` : ""}
           </Link>
           {session?.user ? (
-            <button
-              type="button"
-              onClick={() => signOut({ callbackUrl: "/" })}
-              className="flex min-h-12 items-center rounded-xl px-3 text-left text-brand-400 hover:bg-white"
-            >
-              Выйти
-            </button>
+            <SignOutButton className="flex min-h-12 items-center rounded-xl px-3 text-left text-brand-400 hover:bg-white" />
           ) : null}
         </div>
       </AccessibleDialog>

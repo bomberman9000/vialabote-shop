@@ -5,6 +5,7 @@ import { formatPrice } from "@/lib/money";
 import { deliveryReasonText, formatDeliveryDate } from "@/lib/delivery/format";
 import { findCity, RU_CITIES } from "@/lib/delivery/ru-cities";
 import type { LatLong } from "@/lib/delivery/ozon";
+import type { MapTiles } from "@/lib/delivery/map-tiles";
 import { OzonMap } from "./ozon-map";
 
 /** Центр карты, пока покупатель не выбрал ни город, ни «рядом со мной». */
@@ -17,6 +18,8 @@ export interface OzonPoint {
   city: string | null;
   storageDays: number | null;
   distanceKm?: number;
+  lat?: number | null;
+  long?: number | null;
 }
 
 export interface OzonQuote {
@@ -37,9 +40,12 @@ export interface OzonSelection {
 export function OzonDelivery({
   items,
   onChange,
+  map = null,
 }: {
   items: { productId: string; quantity: number }[];
   onChange: (s: OzonSelection | null) => void;
+  /** Свой сервер плиток; без него карты нет (остальные способы поиска работают). */
+  map?: MapTiles | null;
 }) {
   const [points, setPoints] = useState<OzonPoint[]>([]);
   const [pointId, setPointId] = useState<string | null>(null);
@@ -112,7 +118,9 @@ export function OzonDelivery({
       }));
       setPointId(null);
       setPoints(found);
-      if (found.length === 0) setMessage("На этой улице пунктов Ozon не нашлось — проверьте название или выберите пункт на карте");
+      if (found.length === 0) {
+        setMessage(`На этой улице пунктов Ozon не нашлось — проверьте название${map ? " или выберите пункт на карте" : ""}`);
+      }
     } catch {
       setMessage("Не удалось загрузить пункты выдачи, попробуйте ещё раз");
     } finally {
@@ -161,6 +169,8 @@ export function OzonDelivery({
     }
     setMapOpen(true);
   }
+
+  const selected = points.find((p) => p.id === pointId) ?? null;
 
   useEffect(() => {
     const point = points.find((p) => p.id === pointId);
@@ -252,8 +262,8 @@ export function OzonDelivery({
           Показать пункты
         </button>
       </div>
-      {mapOpen && center ? (
-        <OzonMap center={center} selectedId={pointId} onPick={(id) => void pickFromMap(id)} />
+      {!map ? null : mapOpen && center ? (
+        <OzonMap tiles={map} center={center} selected={selected} onPick={(id) => void pickFromMap(id)} />
       ) : (
         <button type="button" className="btn-outline self-start" onClick={openMap}>
           Выбрать на карте

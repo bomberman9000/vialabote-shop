@@ -9,8 +9,10 @@
    - «рядом со мной» (геолокация браузера) или у центра города из списка → `GET /api/delivery/ozon/points?lat&long` → `GET /api/delivery/ozon/points/info?ids=…`;
    - город + улица (и дом) → `GET /api/delivery/ozon/points/search?lat&long&q=Свободы 2`: поиск по адресам пунктов в 40 км
      от центра города (до 1000 ближайших, карточки из Ozon кешируются на час), без геокодера;
-   - карта (Leaflet + тайлы OpenStreetMap, открывается только кнопкой «Выбрать на карте») → отметки из
-     `GET /api/delivery/ozon/points?minLat&minLong&maxLat&maxLong` (масштаб от 12), адрес — только для выбранной отметки.
+   - карта (Leaflet + плитки со **своего** сервера `MAP_TILE_URL`, как карта ГрузПотока; кнопка «Выбрать на карте» есть,
+     только если `MAP_TILE_URL` задан) → отметки из `GET /api/delivery/ozon/points?minLat&minLong&maxLat&maxLong`
+     (масштаб от 12), адрес — только для выбранной отметки. Выбранный пункт (из списка или на карте) карта показывает:
+     переходит к нему, выделяет отметку и подписывает названием и адресом.
    После выбора пункта `POST /api/delivery/ozon/quote` показывает цену и **максимальный срок**: «получение не позднее …».
 2. **`POST /api/orders`** с `delivery: { provider: "OZON", destination: { type: "PVZ", mapPointId }, recipient: { lastName, firstName } }`.
    Сервер проверяет, что у номера из заказа есть аккаунт Ozon (`v1/delivery/check`; без него получить посылку нельзя).
@@ -127,9 +129,12 @@ sudo systemd-run --quiet --wait --pipe --collect -p EnvironmentFile=/etc/vialabo
 
 ## Ограничения этой версии
 
-- Карта — OpenStreetMap (выбор владельца, 2026-10-28): при открытии карты браузер покупателя грузит тайлы с серверов OSM
-  за рубежом (IP покупателя уходит туда) — вопрос к политике ПДн / уведомлению о трансграничной передаче. До нажатия
-  «Выбрать на карте» к OSM не обращаемся. Кластеры Ozon (`POST /api/delivery/ozon/map`) в checkout не используются.
+- Карта — только свой сервер плиток (решение владельца 2026-10-28: сторонние карты не подходят). Подложка та же, что
+  у ГрузПотока: tileserver-gl + MBTiles на нашем VPS (`/opt/gruzpotok-map/releases/…`, стиль `gruzpotok`), например
+  `MAP_TILE_URL=/maps/current/styles/gruzpotok/{z}/{x}/{y}.png` при проксировании с shop.vialabote.ru или https-адрес
+  сервера плиток. Подпись Leaflet убрана; остаётся только упоминание источника данных (`MAP_TILE_ATTRIBUTION`, по
+  умолчанию «© OpenMapTiles © OpenStreetMap contributors» — его требует лицензия данных OSM, ODbL).
+  Кластеры Ozon (`POST /api/delivery/ozon/map`) в checkout не используются.
 - Поиск по улице сравнивает текст адреса пункта, а не расстояние до дома покупателя: пункт за углом на соседней улице
   найдётся только на карте.
 - Курьер реализован в API (`destination: { type: "COURIER", latitude, longitude }` + адрес), но в checkout не выведен: нужны координаты адреса (тот же геокодер).

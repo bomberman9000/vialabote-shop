@@ -49,7 +49,7 @@ describe("выключатель", () => {
   it("без OZON_APP_* — enabled:false и 503 на всех методах, в Ozon не ходим", async () => {
     const fake = fakeFetch({});
     vi.stubGlobal("fetch", fake.fetch);
-    expect(await (await status.GET()).json()).toEqual({ enabled: false });
+    expect(await (await status.GET()).json()).toEqual({ enabled: false, map: null });
     expect((await points.GET(get("/api/delivery/ozon/points?lat=53.2&long=50.1"))).status).toBe(503);
     expect((await quote.POST(post("/api/delivery/ozon/quote", {}))).status).toBe(503);
     expect((await webhook.POST(post("/api/delivery/ozon/webhook", {}))).status).toBe(503);
@@ -57,20 +57,30 @@ describe("выключатель", () => {
   });
   it("с OZON_APP_* и OZON_CHECKOUT_ENABLED=1 — enabled:true", async () => {
     on();
-    expect(await (await status.GET()).json()).toEqual({ enabled: true });
+    expect(await (await status.GET()).json()).toEqual({ enabled: true, map: null });
+  });
+  it("карта — только свой сервер плиток из MAP_TILE_URL; без Ozon карты нет", async () => {
+    on();
+    vi.stubEnv("MAP_TILE_URL", "/maps/current/styles/gruzpotok/{z}/{x}/{y}.png");
+    expect(await (await status.GET()).json()).toEqual({
+      enabled: true,
+      map: { url: "/maps/current/styles/gruzpotok/{z}/{x}/{y}.png", attribution: "© OpenMapTiles © OpenStreetMap contributors", maxZoom: 18 },
+    });
+    vi.stubEnv("OZON_CHECKOUT_ENABLED", "");
+    expect(await (await status.GET()).json()).toEqual({ enabled: false, map: null });
   });
   it("ключи есть, но витрина не включена — покупатель Ozon не видит; песочница на витрину не попадает никогда", async () => {
     const fake = fakeFetch({});
     vi.stubGlobal("fetch", fake.fetch);
     on();
     vi.stubEnv("OZON_CHECKOUT_ENABLED", "");
-    expect(await (await status.GET()).json()).toEqual({ enabled: false });
+    expect(await (await status.GET()).json()).toEqual({ enabled: false, map: null });
     expect((await points.GET(get("/api/delivery/ozon/points?lat=53.2&long=50.1"))).status).toBe(503);
 
     on();
     vi.stubEnv("OZON_ENV", "sandbox");
     vi.stubEnv("OZON_APP_CLIENT_SECRET_SANDBOX", "sb-secret");
-    expect(await (await status.GET()).json()).toEqual({ enabled: false });
+    expect(await (await status.GET()).json()).toEqual({ enabled: false, map: null });
     expect((await quote.POST(post("/api/delivery/ozon/quote", {}))).status).toBe(503);
     expect((await webhook.POST(post("/api/delivery/ozon/webhook", {}))).status).toBe(503);
     expect(fake.fetch).not.toHaveBeenCalled();

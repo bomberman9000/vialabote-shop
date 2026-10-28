@@ -7,6 +7,7 @@ import { useCart } from "@/lib/cart-context";
 import { formatPrice } from "@/lib/money";
 import { formatDeliveryDate } from "@/lib/delivery/format";
 import { OzonDelivery, type OzonSelection } from "./ozon-delivery";
+import type { MapTiles } from "@/lib/delivery/map-tiles";
 
 export default function CheckoutPage() {
   const { items, totalAmount, clear } = useCart();
@@ -29,13 +30,17 @@ export default function CheckoutPage() {
 
   // Доставка Ozon показывается, только если она включена на сервере; иначе форма как раньше.
   const [ozonEnabled, setOzonEnabled] = useState(false);
+  const [ozonMap, setOzonMap] = useState<MapTiles | null>(null);
   const [mode, setMode] = useState<"OZON_PVZ" | "MANUAL">("OZON_PVZ");
   const [ozon, setOzon] = useState<OzonSelection | null>(null);
   const [recipient, setRecipient] = useState({ lastName: "", firstName: "", middleName: "" });
   useEffect(() => {
     fetch("/api/delivery/ozon")
       .then((r) => r.json())
-      .then((d) => setOzonEnabled(d.enabled === true))
+      .then((d) => {
+        setOzonEnabled(d.enabled === true);
+        setOzonMap(d.map ?? null);
+      })
       .catch(() => setOzonEnabled(false));
   }, []);
   const useOzon = ozonEnabled && mode === "OZON_PVZ";
@@ -157,6 +162,7 @@ export default function CheckoutPage() {
             <OzonDelivery
               items={items.map((i) => ({ productId: i.productId, quantity: i.quantity }))}
               onChange={setOzon}
+              map={ozonMap}
             />
             <div className="grid gap-2 sm:grid-cols-3">
               <input required placeholder="Фамилия получателя" className="input" value={recipient.lastName} onChange={(e) => setRecipient({ ...recipient, lastName: e.target.value })} />

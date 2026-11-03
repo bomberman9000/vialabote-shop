@@ -24,7 +24,9 @@ export default function LoginPage() {
       setError("Неверный email или пароль");
       return;
     }
-    router.push("/account");
+    // ?next=/checkout — вернуть туда, откуда пришли (с оформления заказа). Только свой путь: не «//host».
+    const next = new URLSearchParams(window.location.search).get("next");
+    router.push(next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/account");
     router.refresh();
   }
 

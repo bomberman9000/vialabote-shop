@@ -343,6 +343,42 @@ export async function quoteCart(
   };
 }
 
+const QUOTE_TTL = 5 * 60_000;
+const QUOTE_PARALLEL = 4;
+
+/**
+ * Расчёт сразу для нескольких пунктов — только для показа цены и срока в списке и чтобы заранее пометить
+ * пункты, куда Ozon заказ не довезёт. Кеш на (корзина, пункт) 5 минут; при оформлении заказ считается
+ * заново без кеша. Сбой Ozon по одному пункту -> null (покупатель увидит расчёт при выборе пункта).
+ */
+export async function quotePoints(
+  ozon: Ozon,
+  { lines, mapPointIds }: { lines: CartLine[]; mapPointIds: string[] },
+): Promise<Record<string, CartQuote | null>> {
+  const wanted = new Map<string, number>();
+  for (const l of lines) wanted.set(l.productId, (wanted.get(l.productId) ?? 0) + l.quantity);
+  const cart = JSON.stringify([...wanted].sort(([a], [b]) => a.localeCompare(b)));
+  const ids = [...new Set(mapPointIds)];
+  const out: Record<string, CartQuote | null> = {};
+  let next = 0;
+  async function worker() {
+    while (next < ids.length) {
+      const id = ids[next++];
+      try {
+        out[id] = await cached(`quote:${cart}:${id}`, QUOTE_TTL, () =>
+          quoteCart(ozon, { lines, destination: { type: "PVZ", mapPointId: id } }),
+        );
+      } catch (err) {
+        if (!(err instanceof OzonError)) throw err;
+        console.error(`ozon quotes: пункт ${id}:`, err.message);
+        out[id] = null;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(QUOTE_PARALLEL, ids.length) }, worker));
+  return out;
+}
+
 // ---------------------------------------------------------------- защита публичных методов
 
 const hits = new Map<string, { count: number; reset: number }>();

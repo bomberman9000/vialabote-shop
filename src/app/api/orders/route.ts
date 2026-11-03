@@ -12,11 +12,14 @@ import { cancelUnpaidOrder, placeOnlineOrder } from "@/lib/payments/online-order
 import { reserveForOrder, StockError } from "@/lib/stock/movements";
 import { normalizeRuPhone, OzonError } from "@/lib/delivery/ozon";
 import { allowRequest, checkBuyer, getCheckoutOzon, isLimited, quoteCart, recordHit } from "@/lib/delivery/ozon-service";
-import { ozonDeliverySchema } from "@/lib/delivery/ozon-http";
+import { ozonDeliverySchema, personNameSchema } from "@/lib/delivery/ozon-http";
 import type { OzonOrderRequest } from "@/lib/delivery/ozon-orders";
+import { rememberCheckout } from "@/lib/checkout-profile";
 
 const checkoutSchema = z.object({
   customerName: z.string().min(2),
+  // Те же имя и фамилия раздельно — для профиля (форма спрашивает их один раз). Необязательно.
+  customerNameParts: personNameSchema.optional(),
   customerEmail: z.string().email(),
   customerPhone: z.string().min(5),
   deliveryCity: z.string().min(2),
@@ -93,11 +96,11 @@ export async function POST(req: Request) {
     if (!ozon || !tochka) {
       return NextResponse.json({ error: "Доставка Ozon сейчас недоступна" }, { status: 400 });
     }
-    const phone = normalizeRuPhone(data.customerPhone);
+    const d = data.delivery;
+    const phone = normalizeRuPhone(d.recipient.phone ?? data.customerPhone);
     if (!phone) {
       return NextResponse.json({ error: "Для доставки Ozon нужен мобильный номер РФ" }, { status: 400 });
     }
-    const d = data.delivery;
     // Курьер при оформлении закрыт: координаты приходят от клиента и не сверяются с адресом —
     // цену можно было бы занизить «близкими» координатами при далёком адресе. Откроется вместе
     // с серверным геокодером (адрес -> координаты). Расчёт для показа (/quote) курьера умеет.
@@ -181,6 +184,21 @@ export async function POST(req: Request) {
       : {}),
   };
 
+  // Зарегистрированному покупателю — данные заказа в профиль, чтобы в следующий раз не вводить их снова.
+  // Только после того, как заказ создан; сбой профиля заказ не ломает.
+  const remember = async () => {
+    if (!orderData.userId) return;
+    try {
+      await rememberCheckout(prisma, orderData.userId, {
+        name: data.customerNameParts,
+        phone: data.customerPhone,
+        ozonPointId: data.delivery?.destination.type === "PVZ" ? data.delivery.destination.mapPointId : undefined,
+      });
+    } catch (err) {
+      console.error("orders: профиль покупателя не обновлён", err instanceof Error ? err.message : err);
+    }
+  };
+
   // Без эквайринга: заказ NEW (оплата при получении) + резерв остатка одной транзакцией.
   if (!tochka) {
     try {
@@ -193,6 +211,7 @@ export async function POST(req: Request) {
         });
         return created;
       });
+      await remember();
       return NextResponse.json({ orderId: order.id, orderNumber: order.number, paymentUrl: null });
     } catch (err) {
       if (err instanceof StockError && err.code === "OUT_OF_STOCK") {
@@ -212,6 +231,7 @@ export async function POST(req: Request) {
     }
     throw err;
   }
+  await remember();
   const payPage = `/checkout/pay/${encodeURIComponent(order.number)}`;
   try {
     const link = await createPaymentLink(tochka, {

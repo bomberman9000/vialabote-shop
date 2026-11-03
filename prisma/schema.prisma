@@ -15,6 +15,12 @@ model User {
   email          String   @unique
   passwordHash   String
   phone          String?
+  // Получатель по умолчанию для оформления заказа (Ozon требует фамилию и имя раздельно)
+  // и последний пункт выдачи Ozon. Заполняются после заказа — см. lib/checkout-profile.ts.
+  lastName       String?
+  firstName      String?
+  middleName     String?
+  ozonPointId    String?
   role           String   @default("CUSTOMER")
   // Telegram operator binding — immutable numeric Telegram user ID, НЕ username.
   // Привязывается вручную владельцем (нет self-service подключения).

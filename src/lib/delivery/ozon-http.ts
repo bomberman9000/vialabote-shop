@@ -12,11 +12,16 @@ export const destinationSchema = z.discriminatedUnion("type", [
 
 const name = z.string().trim().min(1).max(60);
 
+/** Фамилия, имя и необязательное отчество — так их ждёт Ozon. */
+export const personNameSchema = z.object({ lastName: name, firstName: name, middleName: name.optional() });
+
 /** Доставка Ozon в теле POST /api/orders. Цены здесь нет: её считает сервер. */
 export const ozonDeliverySchema = z.object({
   provider: z.literal("OZON"),
   destination: destinationSchema,
-  recipient: z.object({ lastName: name, firstName: name, middleName: name.optional() }),
+  // Телефон — только если получатель другой человек: заказ Ozon выдаёт по аккаунту этого номера.
+  // Без него получатель — сам покупатель с customerPhone.
+  recipient: personNameSchema.extend({ phone: z.string().trim().max(30).optional() }),
   courier: z
     .object({
       city: z.string().trim().min(2).max(100),

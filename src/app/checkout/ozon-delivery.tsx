@@ -1,6 +1,6 @@
-// Клиентский компонент без своей "use client": импортируется только из checkout/page.tsx (уже клиентского),
+// Клиентский компонент без своей "use client": импортируется только из checkout/checkout-form.tsx (уже клиентского),
 // поэтому onChange можно передавать функцией.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/money";
 import { deliveryReasonText, formatDeliveryDate } from "@/lib/delivery/format";
 import { findCity, RU_CITIES } from "@/lib/delivery/ru-cities";
@@ -10,6 +10,8 @@ import { OzonMap } from "./ozon-map";
 
 /** Центр карты, пока покупатель не выбрал ни город, ни «рядом со мной». */
 const DEFAULT_CENTER: LatLong = { lat: 55.7558, long: 37.6173 };
+/** Сколько пунктов показываем и считаем за раз (столько же принимает /api/delivery/ozon/quotes). */
+const PAGE = 10;
 
 export interface OzonPoint {
   id: string;
@@ -32,33 +34,52 @@ export interface OzonSelection {
   quote: OzonQuote;
 }
 
+type PointQuote = ({ available: true } & OzonQuote) | { available: false; reason: string };
+
 /**
  * Выбор пункта выдачи Ozon и расчёт. Пункты ищутся рядом с покупателем (геолокация браузера), у центра
- * выбранного города, на указанной улице этого города или на карте. Цена и МАКСИМАЛЬНЫЙ срок показываются
- * до оплаты. Сумму при оформлении сервер считает заново.
+ * выбранного города, на указанной улице этого города или на карте. У каждого пункта в списке — цена и
+ * МАКСИМАЛЬНЫЙ срок, пункты, куда Ozon заказ не довезёт, помечены и не выбираются. Пункт прошлого заказа
+ * выбран заранее. Сумму при оформлении сервер считает заново.
  */
 export function OzonDelivery({
   items,
   onChange,
   map = null,
+  initialPointId = null,
 }: {
   items: { productId: string; quantity: number }[];
   onChange: (s: OzonSelection | null) => void;
   /** Свой сервер плиток; без него карты нет (остальные способы поиска работают). */
   map?: MapTiles | null;
+  /** Пункт прошлого заказа (профиль или этот браузер). Закрытый пункт просто не подставляется. */
+  initialPointId?: string | null;
 }) {
   const [points, setPoints] = useState<OzonPoint[]>([]);
   const [pointId, setPointId] = useState<string | null>(null);
   const [quote, setQuote] = useState<OzonQuote | null>(null);
+  const [quotes, setQuotes] = useState<Record<string, PointQuote | null>>({});
+  const [shown, setShown] = useState(PAGE);
+  const [remembered, setRemembered] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const itemsKey = JSON.stringify(items);
+  const itemsKeyRef = useRef(itemsKey);
+  const requested = useRef(new Set<string>());
+  // Покупатель уже ищет сам — пункт прошлого заказа, догрузившийся позже, его выбор не перебивает.
+  const acted = useRef(false);
 
   const [city, setCity] = useState("");
   const [street, setStreet] = useState("");
   const [fromCity, setFromCity] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [center, setCenter] = useState<LatLong | null>(null);
+
+  function showList(list: OzonPoint[]) {
+    setPointId(null);
+    setShown(PAGE);
+    setPoints(list);
+  }
 
   async function loadPoints(lat: number, long: number, limit: number) {
     setCenter({ lat, long });
@@ -72,8 +93,7 @@ export function OzonDelivery({
       }
       const dist = new Map<string, number>((near.points ?? []).map((p: { id: string; distanceKm: number }) => [p.id, p.distanceKm]));
       const cards = await fetch(`/api/delivery/ozon/points/info?ids=${ids.join(",")}`).then((r) => r.json());
-      setPointId(null);
-      setPoints(
+      showList(
         (cards.points ?? [])
           .filter((c: { enabled: boolean }) => c.enabled)
           .map((c: OzonPoint) => ({ ...c, distanceKm: dist.get(c.id) }))
@@ -87,6 +107,7 @@ export function OzonDelivery({
   }
 
   function findNearby() {
+    acted.current = true;
     setMessage(null);
     if (!navigator.geolocation) {
       setMessage("Браузер не умеет определять местоположение — выберите город ниже");
@@ -116,8 +137,7 @@ export function OzonDelivery({
         ...p,
         distanceKm: p.distanceKm ?? undefined,
       }));
-      setPointId(null);
-      setPoints(found);
+      showList(found);
       if (found.length === 0) {
         setMessage(`На этой улице пунктов Ozon не нашлось — проверьте название${map ? " или выберите пункт на карте" : ""}`);
       }
@@ -129,6 +149,7 @@ export function OzonDelivery({
   }
 
   function findInCity(name = city) {
+    acted.current = true;
     const c = findCity(name);
     if (!c) {
       setMessage("Выберите город из подсказок");
@@ -143,6 +164,7 @@ export function OzonDelivery({
 
   /** Отметка на карте: карточку пункта догружаем, если её ещё нет в списке, и сразу выбираем. */
   async function pickFromMap(id: string) {
+    acted.current = true;
     if (points.some((p) => p.id === id)) {
       setPointId(id);
       return;
@@ -170,13 +192,85 @@ export function OzonDelivery({
     setMapOpen(true);
   }
 
+  // Пункт прошлого заказа: свежая карточка из Ozon (закрытый пункт не подставляем) и сразу расчёт.
+  useEffect(() => {
+    if (!initialPointId || !/^\d{1,19}$/.test(initialPointId)) return;
+    let cancelled = false;
+    fetch(`/api/delivery/ozon/points/info?ids=${initialPointId}`)
+      .then((r) => r.json())
+      .then((res) => {
+        const card: OzonPoint | undefined = (res.points ?? []).find(
+          (p: OzonPoint & { enabled: boolean }) => p.id === initialPointId && p.enabled,
+        );
+        if (cancelled || !card || acted.current) return;
+        setPoints([card]);
+        setPointId(card.id);
+        setRemembered(card.id);
+        setCity((c) => c || card.city || "");
+        if (card.lat != null && card.long != null) setCenter({ lat: card.lat, long: card.long });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [initialPointId]);
+
+  // Цена и срок для видимых пунктов — одним запросом до PAGE штук. Ответ, пришедший после смены
+  // корзины, отбрасываем; ограничение частоты (429) — просто без цен, расчёт будет при выборе.
+  useEffect(() => {
+    if (itemsKeyRef.current !== itemsKey) {
+      itemsKeyRef.current = itemsKey;
+      requested.current = new Set();
+      setQuotes({});
+    }
+    const ids = points
+      .slice(0, shown)
+      .map((p) => p.id)
+      .filter((id) => !requested.current.has(id))
+      .slice(0, PAGE);
+    if (ids.length === 0) return;
+    ids.forEach((id) => requested.current.add(id));
+    const key = itemsKey;
+    fetch("/api/delivery/ozon/quotes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items, mapPointIds: ids }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.quotes && key === itemsKeyRef.current) setQuotes((prev) => ({ ...prev, ...d.quotes }));
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, shown, itemsKey]);
+
   const selected = points.find((p) => p.id === pointId) ?? null;
+  const known = pointId ? quotes[pointId] : undefined;
 
   useEffect(() => {
     const point = points.find((p) => p.id === pointId);
+    if (!point) {
+      setQuote(null);
+      onChange(null);
+      return;
+    }
+    // Пункт уже посчитан в списке — второй раз в Ozon не ходим (и снимаем «занято» отменённого расчёта).
+    if (known) {
+      setBusy(false);
+      if (known.available) {
+        const next = { priceKopecks: known.priceKopecks, maxDate: known.maxDate };
+        setQuote(next);
+        setMessage(null);
+        onChange({ point, quote: next });
+      } else {
+        setQuote(null);
+        onChange(null);
+        setMessage(deliveryReasonText(known.reason));
+      }
+      return;
+    }
     setQuote(null);
     onChange(null);
-    if (!point) return;
     let cancelled = false;
     setBusy(true);
     setMessage(null);
@@ -202,7 +296,9 @@ export function OzonDelivery({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointId, itemsKey, points]);
+  }, [pointId, itemsKey, points, known]);
+
+  const visible = points.slice(0, shown);
 
   return (
     <div className="flex flex-col gap-3 rounded border border-brand-100 p-3 text-sm">
@@ -269,27 +365,53 @@ export function OzonDelivery({
           Выбрать на карте
         </button>
       )}
-      {points.length > 0 ? (
-        <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto">
-          {points.map((p) => (
-            <li key={p.id}>
-              <label className="flex items-start gap-2">
-                <input type="radio" name="ozon-point" className="mt-1" checked={pointId === p.id} onChange={() => setPointId(p.id)} />
-                <span>
-                  <span className="font-medium text-brand-800">{p.name ?? "Пункт выдачи Ozon"}</span>
-                  {p.distanceKm !== undefined ? (
-                    <span className="text-brand-500">
-                      {" "}
-                      · {p.distanceKm} км{fromCity ? " от центра" : ""}
-                    </span>
-                  ) : null}
-                  <br />
-                  <span className="text-brand-600">{p.address}</span>
-                </span>
-              </label>
-            </li>
-          ))}
+      {remembered && remembered === pointId && points.length === 1 ? (
+        <p className="text-brand-600">Пункт из прошлого заказа. Другой можно найти рядом, в городе или на карте.</p>
+      ) : null}
+      {visible.length > 0 ? (
+        <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto">
+          {visible.map((p) => {
+            const q = quotes[p.id];
+            const off = q?.available === false;
+            return (
+              <li key={p.id}>
+                <label className={`flex items-start gap-2 ${off ? "cursor-not-allowed opacity-60" : ""}`}>
+                  <input
+                    type="radio"
+                    name="ozon-point"
+                    className="mt-1"
+                    checked={pointId === p.id}
+                    disabled={off}
+                    onChange={() => setPointId(p.id)}
+                  />
+                  <span className="min-w-0">
+                    <span className="font-medium text-brand-800">{p.name ?? "Пункт выдачи Ozon"}</span>
+                    {remembered === p.id ? <span className="text-brand-500"> · прошлый заказ</span> : null}
+                    {p.distanceKm !== undefined ? (
+                      <span className="text-brand-500">
+                        {" "}
+                        · {p.distanceKm} км{fromCity ? " от центра" : ""}
+                      </span>
+                    ) : null}
+                    <br />
+                    <span className="text-brand-600">{p.address}</span>
+                    {q?.available ? (
+                      <span className="block text-brand-800">
+                        {formatPrice(q.priceKopecks)} · получение до {formatDeliveryDate(q.maxDate)}
+                      </span>
+                    ) : null}
+                    {q && !q.available ? <span className="block text-red-600">{deliveryReasonText(q.reason)}</span> : null}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
         </ul>
+      ) : null}
+      {points.length > shown ? (
+        <button type="button" className="btn-outline self-start" onClick={() => setShown((n) => n + PAGE)}>
+          Показать ещё {Math.min(PAGE, points.length - shown)}
+        </button>
       ) : null}
       {quote ? (
         <p className="font-medium text-brand-800">

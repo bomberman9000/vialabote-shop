@@ -25,7 +25,7 @@ vi.mock("./ozon-map", () => ({
 }));
 
 const TILES = { url: "/maps/{z}/{x}/{y}.png", attribution: "© OpenMapTiles © OpenStreetMap contributors", maxZoom: 18 };
-const json = (body: unknown) => Promise.resolve({ json: async () => body } as Response);
+const json = (body: unknown) => Promise.resolve({ ok: true, json: async () => body } as Response);
 
 function ozonApi() {
   return vi.fn((url: string) => {
@@ -43,6 +43,8 @@ function ozonApi() {
       return json({ points: [{ id: "55017", enabled: true, name: "Постамат Ozon Box", address: "Самара, Красноармейская, 23", city: "Самара", storageDays: 14 }] });
     }
     if (url.startsWith("/api/delivery/ozon/points")) return json({ points: [{ id: "55017", lat: 53.19, long: 50.1, distanceKm: 0.3 }] });
+    // Пакетный расчёт по умолчанию пустой: тогда цена считается при выборе пункта, как раньше.
+    if (url === "/api/delivery/ozon/quotes") return json({ quotes: {} });
     if (url.startsWith("/api/delivery/ozon/quote")) return json({ available: true, priceKopecks: 6400, maxDate: "2026-10-31T17:00:00Z" });
     return json({});
   });
@@ -173,5 +175,99 @@ describe("OzonDelivery: поиск пунктов по городу", () => {
     render(<OzonDelivery items={[{ productId: "p1", quantity: 1 }]} onChange={() => {}} />);
     await userEvent.click(screen.getByRole("button", { name: "Найти пункты выдачи рядом со мной" }));
     expect(screen.getByText("Не удалось определить местоположение — выберите город ниже")).toBeInTheDocument();
+  });
+});
+
+describe("OzonDelivery: цена и срок у каждого пункта, прошлый пункт", () => {
+  const SEARCH = [
+    { id: "901", enabled: true, name: "Пункт Ozon", address: "Самара, улица Свободы, 2", city: "Самара", storageDays: 14, distanceKm: 7.9 },
+    { id: "902", enabled: true, name: "Пункт Ozon", address: "Самара, улица Свободы, 69", city: "Самара", storageDays: 14, distanceKm: 8.1 },
+  ];
+  function api(quotes: Record<string, unknown>, extra: (url: string) => Promise<Response> | null = () => null) {
+    return vi.fn((url: string, init?: RequestInit) => {
+      const e = extra(url);
+      if (e) return e;
+      if (url.startsWith("/api/delivery/ozon/points/search")) return json({ points: SEARCH });
+      if (url === "/api/delivery/ozon/quotes") {
+        const ids: string[] = JSON.parse(String(init?.body)).mapPointIds;
+        return json({ quotes: Object.fromEntries(ids.map((id) => [id, quotes[id] ?? null])) });
+      }
+      return ozonApi()(url);
+    });
+  }
+
+  it("у пунктов — цена и срок одним запросом; недоступный помечен и не выбирается; выбранный не пересчитывается", async () => {
+    const fetch = api({
+      "901": { available: true, priceKopecks: 26200, maxDate: "2026-11-06T17:00:00Z" },
+      "902": { available: false, reason: "NO_TIMESLOT" },
+    });
+    vi.stubGlobal("fetch", fetch);
+    const onChange = vi.fn();
+    render(<OzonDelivery items={[{ productId: "p1", quantity: 3 }]} onChange={onChange} />);
+    await userEvent.type(screen.getByLabelText("или в городе:"), "Самара");
+    await userEvent.type(screen.getByLabelText("улица:"), "Свободы{Enter}");
+
+    await screen.findByText(/262.*получение до 6 ноября/);
+    expect(screen.getByText("Ozon пока не может доставить в этот пункт — выберите другой")).toBeInTheDocument();
+    const [ok, off] = screen.getAllByRole("radio");
+    expect(off).toBeDisabled();
+    const batch = fetch.mock.calls.filter((c) => c[0] === "/api/delivery/ozon/quotes");
+    expect(batch).toHaveLength(1);
+    expect(JSON.parse(String((batch[0][1] as RequestInit).body))).toEqual({ items: [{ productId: "p1", quantity: 3 }], mapPointIds: ["901", "902"] });
+
+    await userEvent.click(ok);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ point: expect.objectContaining({ id: "901" }), quote: { priceKopecks: 26200, maxDate: "2026-11-06T17:00:00Z" } }),
+    );
+    expect(fetch.mock.calls.some((c) => c[0] === "/api/delivery/ozon/quote")).toBe(false);
+  });
+
+  it("пакетный расчёт не удался (429) — пункты без цен, расчёт при выборе как раньше", async () => {
+    const fetch = api({}, (url) => (url === "/api/delivery/ozon/quotes" ? Promise.resolve({ ok: false, json: async () => ({}) } as Response) : null));
+    vi.stubGlobal("fetch", fetch);
+    const onChange = vi.fn();
+    render(<OzonDelivery items={[{ productId: "p1", quantity: 1 }]} onChange={onChange} />);
+    await userEvent.type(screen.getByLabelText("или в городе:"), "Самара");
+    await userEvent.type(screen.getByLabelText("улица:"), "Свободы{Enter}");
+    await screen.findByText("Самара, улица Свободы, 69");
+    await userEvent.click(screen.getAllByRole("radio")[1]);
+    await screen.findByText(/Доставка .*64.*получение не позднее/);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ point: expect.objectContaining({ id: "902" }) }));
+  });
+
+  it("пункт прошлого заказа выбран сразу: город подставлен, доставка посчитана", async () => {
+    const fetch = api({ "55017": { available: true, priceKopecks: 9400, maxDate: "2026-11-04T17:00:00Z" } });
+    vi.stubGlobal("fetch", fetch);
+    const onChange = vi.fn();
+    render(<OzonDelivery items={[{ productId: "p1", quantity: 1 }]} onChange={onChange} initialPointId="55017" />);
+    await screen.findByText("Пункт из прошлого заказа. Другой можно найти рядом, в городе или на карте.");
+    expect(screen.getByRole("radio")).toBeChecked();
+    expect(screen.getByLabelText("или в городе:")).toHaveValue("Самара");
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ point: expect.objectContaining({ id: "55017" }), quote: { priceKopecks: 9400, maxDate: "2026-11-04T17:00:00Z" } })),
+    );
+    expect(fetch.mock.calls[0][0]).toBe("/api/delivery/ozon/points/info?ids=55017");
+  });
+
+  it("закрытый пункт прошлого заказа не подставляется", async () => {
+    vi.stubGlobal("fetch", api({}, (url) => (url.startsWith("/api/delivery/ozon/points/info") ? json({ points: [{ id: "55017", enabled: false }] }) : null)));
+    render(<OzonDelivery items={[{ productId: "p1", quantity: 1 }]} onChange={() => {}} initialPointId="55017" />);
+    await waitFor(() => expect(screen.queryByRole("radio")).toBeNull());
+    expect(screen.queryByText(/прошлого заказа/)).toBeNull();
+  });
+
+  it("больше 10 пунктов: сначала 10 и их расчёт, «Показать ещё» — следующие с отдельным расчётом", async () => {
+    const many = Array.from({ length: 13 }, (_, i) => ({ id: String(1000 + i), enabled: true, name: `Пункт ${i}`, address: `Самара, адрес ${i}`, city: "Самара", storageDays: 14, distanceKm: i }));
+    const fetch = api({}, (url) => (url.startsWith("/api/delivery/ozon/points/search") ? json({ points: many }) : null));
+    vi.stubGlobal("fetch", fetch);
+    render(<OzonDelivery items={[{ productId: "p1", quantity: 1 }]} onChange={() => {}} />);
+    await userEvent.type(screen.getByLabelText("или в городе:"), "Самара");
+    await userEvent.type(screen.getByLabelText("улица:"), "адрес{Enter}");
+    await screen.findByText("Самара, адрес 9");
+    expect(screen.queryByText("Самара, адрес 10")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Показать ещё 3" }));
+    await screen.findByText("Самара, адрес 12");
+    const batches = fetch.mock.calls.filter((c) => c[0] === "/api/delivery/ozon/quotes").map((c) => JSON.parse(String((c[1] as RequestInit).body)).mapPointIds);
+    expect(batches).toEqual([many.slice(0, 10).map((p) => p.id), ["1010", "1011", "1012"]]);
   });
 });

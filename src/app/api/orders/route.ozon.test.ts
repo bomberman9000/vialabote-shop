@@ -5,6 +5,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest
 import { prisma } from "@/lib/prisma";
 import { clearOzonCache, resetRequestLimits } from "@/lib/delivery/ozon-service";
 import { checkoutReply, fakeFetch, stocksReply, unavailableReply } from "@/lib/delivery/__fixtures__/fake-ozon";
+import { getServerSession } from "next-auth";
 
 vi.mock("next-auth", () => ({ getServerSession: vi.fn().mockResolvedValue(null) }));
 // Токен частного приложения не нужен: БД-строку токена делят все тестовые файлы.
@@ -147,6 +148,55 @@ describe("POST /api/orders — доставка Ozon", () => {
     expect(fake.bodies("/v1/delivery/check")).toEqual([{ client_phone: "79991234567" }]); // Ozon: только цифры
     expect(fake.count("/v2/delivery/checkout")).toBe(0);
     expect(fake.count("/uapi/acquiring/v1.0/payments")).toBe(0);
+  });
+
+  it("получатель — другой человек: аккаунт Ozon проверяется по ЕГО номеру, он же уходит в заказ Ozon", async () => {
+    env();
+    const p = await product();
+    const fake = world(p);
+    vi.stubGlobal("fetch", fake.fetch);
+    const other = { ...pvz, recipient: { lastName: "Петров", firstName: "Пётр", phone: "+7 (912) 000-11-22" } };
+    const res = await post(body(p.id, other));
+    expect(res.status).toBe(200);
+    expect(fake.bodies("/v1/delivery/check")).toEqual([{ client_phone: "79120001122" }]);
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: (await res.json()).orderId }, include: { ozon: true } });
+    expect(order.customerPhone).toBe("8 (999) 123-45-67"); // контакт заказчика не меняется
+    expect(order.ozon!.request).toMatchObject({ recipient: { lastName: "Петров", firstName: "Пётр", phone: "+79120001122" } });
+  });
+
+  it("зарегистрированный покупатель: после заказа имя раздельно, телефон и пункт — в профиль; email-логин не трогается", async () => {
+    env();
+    const p = await product();
+    vi.stubGlobal("fetch", world(p).fetch);
+    const user = await prisma.user.create({ data: { email: `orz-${suffix}@example.com`, passwordHash: "x", name: "Анна" } });
+    try {
+      vi.mocked(getServerSession).mockResolvedValueOnce({ user: { id: user.id } } as never);
+      const res = await post({ ...body(p.id, pvz), customerEmail: "other@example.com", customerNameParts: { lastName: "Иванова", firstName: "Анна" } });
+      expect(res.status).toBe(200);
+      const saved = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      expect(saved).toMatchObject({
+        email: `orz-${suffix}@example.com`,
+        name: "Анна",
+        lastName: "Иванова",
+        firstName: "Анна",
+        middleName: null,
+        phone: "+79991234567",
+        ozonPointId: "1020300040005",
+      });
+    } finally {
+      const orders = await prisma.order.findMany({ where: { userId: user.id }, select: { id: true } });
+      await prisma.order.updateMany({ where: { id: { in: orders.map((o) => o.id) } }, data: { userId: null } });
+      await prisma.user.delete({ where: { id: user.id } });
+    }
+  });
+
+  it("заказ гостя профиль не трогает (сессии нет)", async () => {
+    env();
+    const p = await product();
+    vi.stubGlobal("fetch", world(p).fetch);
+    const res = await post({ ...body(p.id, pvz), customerNameParts: { lastName: "Иванова", firstName: "Анна" } });
+    expect(res.status).toBe(200);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: (await res.json()).orderId } })).userId).toBeNull();
   });
 
   const postFrom = (b: unknown, ip: string) =>

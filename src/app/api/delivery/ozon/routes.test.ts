@@ -6,7 +6,7 @@ import path from "node:path";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { clearOzonCache, resetRequestLimits } from "@/lib/delivery/ozon-service";
-import { checkoutReply, fakeFetch, stocksReply } from "@/lib/delivery/__fixtures__/fake-ozon";
+import { checkoutReply, fakeFetch, stocksReply, unavailableReply } from "@/lib/delivery/__fixtures__/fake-ozon";
 
 vi.mock("@/lib/delivery/ozon-token", () => ({
   createTokenStore: () => ({ getAccessToken: async () => "test-token", exchangeCode: async () => ({ expiresIn: 1, scope: null }) }),
@@ -18,6 +18,7 @@ const info = await import("./points/info/route");
 const search = await import("./points/search/route");
 const map = await import("./map/route");
 const quote = await import("./quote/route");
+const quotes = await import("./quotes/route");
 const webhook = await import("./webhook/route");
 
 const on = () => {
@@ -52,6 +53,7 @@ describe("выключатель", () => {
     expect(await (await status.GET()).json()).toEqual({ enabled: false, map: null });
     expect((await points.GET(get("/api/delivery/ozon/points?lat=53.2&long=50.1"))).status).toBe(503);
     expect((await quote.POST(post("/api/delivery/ozon/quote", {}))).status).toBe(503);
+    expect((await quotes.POST(post("/api/delivery/ozon/quotes", {}))).status).toBe(503);
     expect((await webhook.POST(post("/api/delivery/ozon/webhook", {}))).status).toBe(503);
     expect(fake.fetch).not.toHaveBeenCalled();
   });
@@ -216,6 +218,53 @@ describe("проверка, расчёт, ограничение частоты"
     expect(await res.json()).toEqual({ available: true, deliveryType: "PVZ", priceKopecks: 18990, maxDate: "2026-11-09T20:59:59Z", shipments: 1 });
     expect(fake.bodies("/v2/delivery/checkout")[0].buyer_phone).toBeUndefined();
     expect((await quote.POST(post("/api/delivery/ozon/quote", { items: [], destination: { type: "PVZ", mapPointId: "x" } }))).status).toBe(400);
+  });
+
+  it("quotes: цена и срок сразу для списка пунктов; недоступный — с причиной; сбой одного — null; кеш на (корзина, пункт)", async () => {
+    on();
+    const fake = fakeFetch({
+      "/v4/product/info/stocks": () => stocksReply([{ offer_id: "RT-1", present: 3 }]),
+      "/v2/delivery/checkout": (b: { delivery_type: { pick_up: { map_point_id: number } } }) => {
+        const id = b.delivery_type.pick_up.map_point_id;
+        if (id === 2) return unavailableReply("BANNED_FOR_AREA");
+        if (id === 3) return { status: 500, body: { message: "boom" } };
+        return checkoutReply([{ sku: 4242, quantity: 1 }], { amount: "94.00", to: "2026-11-04T17:00:00Z" });
+      },
+    });
+    vi.stubGlobal("fetch", fake.fetch);
+    const body = { items: [{ productId, quantity: 1 }], mapPointIds: ["1", "2", "3", "1"] };
+    const res = await quotes.POST(post("/api/delivery/ozon/quotes", body));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      quotes: {
+        "1": { available: true, priceKopecks: 9400, maxDate: "2026-11-04T17:00:00Z" },
+        "2": { available: false, reason: "BANNED_FOR_AREA" },
+        "3": null,
+      },
+    });
+    expect(fake.bodies("/v2/delivery/checkout")).toHaveLength(3); // повтор id в запросе не считается дважды
+    expect(fake.bodies("/v2/delivery/checkout").every((b) => b.buyer_phone === undefined)).toBe(true);
+
+    // Тот же список ещё раз: удачный и недоступный — из кеша, сбойный (null) — спрашиваем снова.
+    await quotes.POST(post("/api/delivery/ozon/quotes", body));
+    expect(fake.bodies("/v2/delivery/checkout")).toHaveLength(4);
+  });
+
+  it("quotes: не больше 10 пунктов за раз, кривой id — 400; не больше 6 запросов в минуту с адреса", async () => {
+    on();
+    const fake = quoteWorld();
+    vi.stubGlobal("fetch", fake.fetch);
+    const items = [{ productId, quantity: 1 }];
+    const ids11 = Array.from({ length: 11 }, (_, i) => String(i + 1));
+    expect((await quotes.POST(post("/api/delivery/ozon/quotes", { items, mapPointIds: ids11 }))).status).toBe(400);
+    expect((await quotes.POST(post("/api/delivery/ozon/quotes", { items, mapPointIds: ["x1"] }))).status).toBe(400);
+    expect(fake.fetch).not.toHaveBeenCalled();
+
+    resetRequestLimits();
+    const codes: number[] = [];
+    for (let i = 0; i < 7; i++) codes.push((await quotes.POST(post("/api/delivery/ozon/quotes", { items, mapPointIds: ["1"] }))).status);
+    expect(codes).toEqual([200, 200, 200, 200, 200, 200, 429]);
+    expect((await quotes.POST(post("/api/delivery/ozon/quotes", { items, mapPointIds: ["1"] }, "10.0.0.2"))).status).toBe(200);
   });
 
   it("публичной проверки номера нет (оракул аккаунтов Ozon) — только при оформлении заказа", () => {

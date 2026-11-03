@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CreditCard, Truck } from "lucide-react";
+import { ChevronLeft, CreditCard, Truck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/money";
 import { AddToCartButton } from "@/components/add-to-cart-button";
@@ -111,6 +111,23 @@ export default async function ProductPage({ params }: { params: { slug: string }
   return (
     <div className="flex flex-col gap-16 md:gap-24">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }} />
+      {/* Выход со страницы товара: на телефоне кнопку «Назад» браузера не видно, а зашли могли из поиска или мессенджера. */}
+      <nav aria-label="Навигация" className="-mb-10 flex min-w-0 items-center gap-2 text-sm text-brand-500 md:-mb-16">
+        <Link
+          href={`/catalog?category=${product.category.slug}`}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-3 py-1.5 font-medium text-brand-800 hover:bg-brand-50"
+        >
+          <ChevronLeft aria-hidden className="h-4 w-4" />
+          Каталог
+        </Link>
+        <Link href={`/catalog?category=${product.category.slug}`} className="hidden shrink-0 hover:text-brand-800 sm:inline">
+          {product.category.name}
+        </Link>
+        <span aria-hidden className="hidden sm:inline">/</span>
+        <span className="hidden truncate text-brand-700 sm:inline" aria-current="page">
+          {product.title}
+        </span>
+      </nav>
       <div className="grid gap-8 md:grid-cols-[1.05fr_0.95fr] md:gap-12 lg:gap-16">
         {/* GALLERY — sticky на desktop, пока читается описание */}
         <div className="md:sticky md:top-28 md:self-start">

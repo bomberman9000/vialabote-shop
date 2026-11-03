@@ -34,6 +34,16 @@ export const BUNDLE_ITEM_NAMES: Record<string, string> = {
   "serum-8-in-1-white-tea": "сыворотку 8 в 1",
 };
 
+/** Витрина наборов на главной: какой товар показывать за «любое масло» и короткое описание. */
+export const BUNDLE_SHOWCASE: Record<string, { slugs: string[]; subtitle: string }> = {
+  men: { slugs: ["beard-oil-steblev", "hydrophilic-gel-oil"], subtitle: "Любое масло для бороды + гидрофильное гель-масло" },
+  "men-2": { slugs: ["beard-oil-bigman", "toner-serum-ph55"], subtitle: "Любое масло для бороды + тоник мультиактивный" },
+  "clear-skin": { slugs: ["toner-serum-ph55", "multi3-anti-acne-serum"], subtitle: "Тоник мультиактивный + сыворотка MULTI 3 против акне" },
+  "anti-age": { slugs: ["inci-retinal-serum", "toner-serum-ph6"], subtitle: "Сыворотка с ретиналем + тоник увлажняющий" },
+  glow: { slugs: ["serum-resveratrol-vitamin-c", "toner-serum-ph6"], subtitle: "Сыворотка с ресвератролом + тоник увлажняющий" },
+  hydration: { slugs: ["serum-8-in-1-white-tea", "toner-serum-ph6"], subtitle: "Сыворотка 8 в 1 + тоник увлажняющий" },
+};
+
 export interface BundleLine {
   slug: string;
   /** цена за штуку, копейки (уже со скидкой товара) */

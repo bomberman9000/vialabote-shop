@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from "vitest";
-import { breadcrumbJsonLd, jsonLdHtml, productJsonLd, storeJsonLd } from "./seo";
+import { breadcrumbJsonLd, jsonLdHtml, pageMetadata, productJsonLd, productMetaDescription, storeJsonLd } from "./seo";
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -50,6 +50,37 @@ describe("JSON-LD товара", () => {
     const html = jsonLdHtml(productJsonLd({ ...base, title: 'Крем</script><script>alert(1)</script>' }));
     expect(html).not.toContain("</script>");
     expect(JSON.parse(html).name).toBe('Крем</script><script>alert(1)</script>');
+  });
+});
+
+describe("мета-описания страниц", () => {
+  it("canonical, og:url, og:title и og:description — на одном адресе страницы", () => {
+    const m = pageMetadata("/returns", "Доставка, оплата и возврат — Vialabote", "Условия доставки, оплаты и возврата заказа.");
+    expect(m.alternates?.canonical).toBe("/returns");
+    expect(m.openGraph?.url).toBe("/returns");
+    expect(m.openGraph?.title).toBe("Доставка, оплата и возврат — Vialabote");
+    expect(m.openGraph?.description).toBe("Условия доставки, оплаты и возврата заказа.");
+    expect(m.openGraph?.siteName).toBe("VIA LABOTE");
+    expect(m.twitter).toMatchObject({ card: "summary_large_image" });
+  });
+
+  it("короткий подзаголовок дополняется до полноценного описания", () => {
+    const d = productMetaDescription("Без аромата · СТЕБЛЕВ", "Масло для бороды");
+    expect(d.startsWith("Без аромата · СТЕБЛЕВ")).toBe(true);
+    expect(d.length).toBeGreaterThanOrEqual(70);
+    expect(d.length).toBeLessThanOrEqual(160);
+    expect(d).toContain("Масло для бороды");
+  });
+
+  it("достаточно длинное описание не меняется", () => {
+    const long = "Длинное описание товара, которое уже содержит всё нужное и не должно переписываться.";
+    expect(productMetaDescription(long, "Масло")).toBe(long);
+  });
+
+  it("без текста в карточке описание всё равно непустое", () => {
+    const d = productMetaDescription(null, "Масло для бороды");
+    expect(d.length).toBeGreaterThanOrEqual(70);
+    expect(d).toContain("VIA LABOTE");
   });
 });
 

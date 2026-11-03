@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ProductCard, ProductGrid } from "@/components/product-card";
 import { concernTitle } from "@/lib/concerns";
+import { SHARE_IMAGE } from "@/lib/share-image";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 import { toProductCardData } from "@/lib/product-card-data";
 import { SortSelect } from "./sort-select";
@@ -19,11 +20,27 @@ export async function generateMetadata({
   const concern = searchParams.concern
     ? await prisma.concern.findUnique({ where: { slug: searchParams.concern } })
     : null;
+  const title = concern ? `${concernTitle(concern)} — Каталог Via Labote` : "Каталог — Via Labote";
+  const description =
+    "Каталог косметики VIA LABOTE: уход за лицом и телом, уход за бородой, средства от выпадения волос. Доставка по России.";
   return {
-    title: concern ? `${concernTitle(concern)} — Каталог Via Labote` : "Каталог — Via Labote",
+    title,
+    description,
     // Отфильтрованные/отсортированные вариации каталога не индексируем отдельно —
     // избегаем дублей и бесконечного crawl-space на query-параметрах.
     alternates: { canonical: "/catalog" },
+    // openGraph страницы целиком заменяет общий из layout — без своего url он
+    // указывал бы на главную, и og:url расходился с canonical.
+    openGraph: {
+      type: "website",
+      siteName: "VIA LABOTE",
+      locale: "ru_RU",
+      url: "/catalog",
+      title,
+      description,
+      images: [SHARE_IMAGE],
+    },
+    twitter: { card: "summary_large_image", title, description, images: [SHARE_IMAGE.url] },
   };
 }
 

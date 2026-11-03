@@ -129,7 +129,7 @@ export default async function HomePage() {
               <h2 id="bundles-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">
                 Комбо-уходы со скидкой −10%
               </h2>
-              <p className="text-sm text-brand-600">Средства, которые работают в паре. Скидка применяется сама, когда оба товара в корзине.</p>
+              <p className="text-sm text-brand-600">Как советуют создатели VIA LABOTE: средства, которые работают в паре. Скидка применяется сама, когда оба товара в корзине.</p>
             </div>
             <BundleOffers offers={bundleOffers} />
           </section>

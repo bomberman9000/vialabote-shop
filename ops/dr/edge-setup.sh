@@ -175,6 +175,7 @@ server {
 }
 server {
     listen 443 ssl; listen [::]:443 ssl;
+    http2 on;
     server_name www.vialabote.ru;
     ssl_certificate $L/fullchain.pem;
     ssl_certificate_key $L/privkey.pem;
@@ -186,6 +187,7 @@ server {
 }
 server {
     listen 443 ssl; listen [::]:443 ssl;
+    http2 on;
     server_name vialabote.ru shop.vialabote.ru;
     ssl_certificate $L/fullchain.pem;
     ssl_certificate_key $L/privkey.pem;

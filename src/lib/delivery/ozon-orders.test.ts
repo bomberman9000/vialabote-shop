@@ -126,6 +126,27 @@ describe.skipIf(!HAS_DB)("Ozon: расчёт корзины", () => {
     expect(fake.count("/v2/delivery/checkout")).toBe(0);
   });
 
+  it("схема MIX/FBO: остаток на складе Ozon (FBO) считается — товар только на FBO доставляем; FBS — нет", async () => {
+    const p = await product();
+    const stocks = () => ({ body: { items: [{ offer_id: p.ozonOfferId!, stocks: [{ type: "fbo", present: 147, reserved: 0 }, { type: "fbs", present: 0, reserved: 0 }] }] } });
+    const lines = [{ productId: p.id, quantity: 2 }];
+    const destination = { type: "PVZ" as const, mapPointId: "55" };
+    for (const schema of ["MIX", "FBO"] as const) {
+      clearOzonCache();
+      const fake = fakeFetch({ "/v4/product/info/stocks": stocks, "/v2/delivery/checkout": () => checkoutReply([{ sku: Number(p.ozonSku), quantity: 2 }], { amount: "81.00" }) });
+      const q = await quoteCart(testOzon(fake, { deliverySchema: schema }), { lines, destination });
+      expect(q).toMatchObject({ available: true, priceKopecks: 8100 });
+      expect(fake.bodies("/v2/delivery/checkout")[0].delivery_schema).toBe(schema);
+    }
+    clearOzonCache();
+    const fbs = fakeFetch({ "/v4/product/info/stocks": stocks });
+    expect(await quoteCart(testOzon(fbs, { deliverySchema: "FBS" }), { lines, destination })).toMatchObject({ available: false, reason: "OUT_OF_STOCK_FBS" });
+    clearOzonCache();
+    const none = fakeFetch({ "/v4/product/info/stocks": () => ({ body: { items: [{ offer_id: p.ozonOfferId!, stocks: [{ type: "fbo", present: 1, reserved: 0 }] }] } }) });
+    expect(await quoteCart(testOzon(none, { deliverySchema: "MIX" }), { lines, destination })).toMatchObject({ available: false, reason: "OUT_OF_STOCK" });
+    expect(none.count("/v2/delivery/checkout")).toBe(0);
+  });
+
   it("Ozon вернул не все позиции -> PARTIAL; курьер — координаты в checkout", async () => {
     clearOzonCache();
     const p = await product();
@@ -304,6 +325,41 @@ describe.skipIf(!HAS_DB)("Ozon: опрос статусов и возвраты"
     await syncOzonOrders(testOzon(fake), { orderIds: [o.id] });
     expect(await orderStatus(o.id)).toBe("COMPLETED");
     expect((await ozonRow(o.id)).refundState).toBeNull();
+  });
+
+  it("MIX: отправление не FBS (404) -> статус из v2/posting/fbo/get; FBO — сразу fbo/get, без поиска FBS", async () => {
+    const { order: o } = await order({ status: "PROCESSING", state: "CREATED", extra: { ozonOrderNumber: `N-${suffix}-m`, postingNumbers: [`N-${suffix}-m-1`] } });
+    const fake = fakeFetch({
+      "/v4/posting/fbs/list": () => ({ body: { postings: [], has_next: false } }),
+      "/v3/posting/fbs/get": () => ({ status: 404, body: { code: 5, message: "POSTING_NOT_FOUND" } }),
+      "/v2/posting/fbo/get": (b) => ({ body: { result: { posting_number: b.posting_number, status: "delivering" } } }),
+      "/v1/returns/list": () => ({ body: { returns: [] } }),
+    });
+    await syncOzonOrders(testOzon(fake, { deliverySchema: "MIX" }), { orderIds: [o.id] });
+    expect(await ozonRow(o.id)).toMatchObject({ status: "delivering" });
+    expect(await orderStatus(o.id)).toBe("SHIPPED");
+    expect(fake.bodies("/v2/posting/fbo/get")).toEqual([{ posting_number: `N-${suffix}-m-1` }]);
+
+    const { order: f } = await order({ status: "PROCESSING", state: "CREATED", extra: { ozonOrderNumber: `N-${suffix}-f`, postingNumbers: [`N-${suffix}-f-1`] } });
+    const fboOnly = fakeFetch({
+      "/v2/posting/fbo/get": (b) => ({ body: { result: { posting_number: b.posting_number, status: "delivered" } } }),
+      "/v1/returns/list": () => ({ body: { returns: [] } }),
+    });
+    await syncOzonOrders(testOzon(fboOnly, { deliverySchema: "FBO" }), { orderIds: [f.id] });
+    expect(await orderStatus(f.id)).toBe("COMPLETED");
+    expect(fboOnly.count("/v3/posting/fbs/get") + fboOnly.count("/v4/posting/fbs/list")).toBe(0);
+  });
+
+  it("FBS: 404 на отправление — ошибка остаётся ошибкой (на FBO не переключаемся)", async () => {
+    const { order: o } = await order({ status: "PROCESSING", state: "CREATED", extra: { ozonOrderNumber: `N-${suffix}-s`, postingNumbers: [`N-${suffix}-s-1`] } });
+    const fake = fakeFetch({
+      "/v4/posting/fbs/list": () => ({ body: { postings: [], has_next: false } }),
+      "/v3/posting/fbs/get": () => ({ status: 404, body: { code: 5 } }),
+      "/v1/returns/list": () => ({ body: { returns: [] } }),
+    });
+    await syncOzonOrders(testOzon(fake), { orderIds: [o.id] });
+    expect(fake.count("/v2/posting/fbo/get")).toBe(0);
+    expect(await orderStatus(o.id)).toBe("PROCESSING");
   });
 
   it("невыкуп (returns/list) -> refundState REQUIRED; Ozon сам отменил -> заказ CANCELLED", async () => {

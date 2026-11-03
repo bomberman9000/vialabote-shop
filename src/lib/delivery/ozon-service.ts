@@ -230,25 +230,29 @@ export async function checkBuyer(ozon: Ozon, phone: string): Promise<{ possible:
   return { possible: r.is_possible === true };
 }
 
-// ---------------------------------------------------------------- остатки FBS
+// ---------------------------------------------------------------- остатки
 
-/** Доступно на FBS-складах Ozon по offer_id: present − reserved. Сбой Ozon -> null (решает checkout). */
-export async function fbsAvailable(ozon: Ozon, offerIds: string[]): Promise<Map<string, number> | null> {
+/** Какие склады Ozon считать для схемы доставки: FBS — склад продавца, FBO — склад Ozon, MIX — оба (выбирает Ozon). */
+const STOCK_TYPES: Record<Ozon["cfg"]["deliverySchema"], string[]> = { FBS: ["fbs"], FBO: ["fbo"], MIX: ["fbs", "fbo"] };
+
+/** Доступно по offer_id на складах схемы доставки: present − reserved. Сбой Ozon -> null (решает checkout). */
+export async function ozonAvailable(ozon: Ozon, offerIds: string[]): Promise<Map<string, number> | null> {
   const ids = [...new Set(offerIds)].sort();
   if (ids.length === 0) return new Map();
+  const types = STOCK_TYPES[ozon.cfg.deliverySchema];
   try {
-    return await cached(`stocks:${ids.join(",")}`, STOCK_TTL, async () => {
+    return await cached(`stocks:${types.join("+")}:${ids.join(",")}`, STOCK_TTL, async () => {
       const res = await ozon.client.productStocks(ids);
       const out = new Map<string, number>(ids.map((id) => [id, 0]));
       for (const item of res.items ?? []) {
         if (!item.offer_id) continue;
-        const fbs = (item.stocks ?? []).filter((s) => s.type === "fbs");
-        out.set(item.offer_id, fbs.reduce((sum, s) => sum + Math.max(0, (s.present ?? 0) - (s.reserved ?? 0)), 0));
+        const rows = (item.stocks ?? []).filter((s) => types.includes(s.type ?? ""));
+        out.set(item.offer_id, rows.reduce((sum, s) => sum + Math.max(0, (s.present ?? 0) - (s.reserved ?? 0)), 0));
       }
       return out;
     });
   } catch (err) {
-    console.error("ozon: остатки FBS не получены", err instanceof OzonError ? err.message : err);
+    console.error("ozon: остатки не получены", err instanceof OzonError ? err.message : err);
     return null;
   }
 }
@@ -306,10 +310,12 @@ export async function quoteCart(
   if (items.length === 0) return { available: false, reason: "EMPTY" };
 
   const withOffer = items.filter((i) => i.offerId);
-  const stock = await fbsAvailable(ozon, withOffer.map((i) => i.offerId!));
+  const stock = await ozonAvailable(ozon, withOffer.map((i) => i.offerId!));
   if (stock) {
     const short = withOffer.filter((i) => (stock.get(i.offerId!) ?? 0) < i.quantity).map((i) => i.productId);
-    if (short.length) return { available: false, reason: "OUT_OF_STOCK_FBS", productIds: short };
+    if (short.length) {
+      return { available: false, reason: ozon.cfg.deliverySchema === "FBS" ? "OUT_OF_STOCK_FBS" : "OUT_OF_STOCK", productIds: short };
+    }
   }
 
   const buyerPhone = phone ? normalizeRuPhone(phone) : null;

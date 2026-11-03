@@ -144,7 +144,7 @@ sudo systemd-run --quiet --wait --pipe --collect -p EnvironmentFile=/etc/vialabo
 - Поиск по улице сравнивает текст адреса пункта, а не расстояние до дома покупателя: пункт за углом на соседней улице
   найдётся только на карте.
 - Курьер реализован в API (`destination: { type: "COURIER", latitude, longitude }` + адрес), но в checkout не выведен: нужны координаты адреса (тот же геокодер).
-- Только схема FBS опрашивается по отправлениям (`v4/posting/fbs/list`); для FBO нужен `v2/posting/fbo/list`.
+- Схема `OZON_DELIVERY_SCHEMA` (FBS / FBO / MIX): остатки считаются по её складам (MIX — fbs+fbo); статус отправления — `v3/posting/fbs/get`, для FBO — `v2/posting/fbo/get` (при MIX — FBO, если FBS ответил 404). С 2026-11-03 Ozon считает доставку с FBO для всех 13 товаров.
 - `price.nanos` в `v2/order/create` передаётся как в google.type.Money (копейки × 10⁷). В документации Ozon nanos описан как «копейки» —
   не подтверждено. При ценах в целых рублях nanos = 0, и разночтения нет.
 - Чеки 54-ФЗ и вывод КИЗ «Честного знака» из оборота (`v1/posting/marks`) — на стороне сайта, не реализованы.

@@ -258,14 +258,29 @@ export interface SyncReport {
   errors: string[];
 }
 
+/**
+ * Отправление по номеру. FBS — v3/posting/fbs/get, FBO — v2/posting/fbo/get; при MIX Ozon сам решает, с какого склада
+ * везти, поэтому сначала FBS, а если там такого нет (404 или пустой ответ) — FBO.
+ */
+async function getPosting(ozon: Ozon, n: string) {
+  if (ozon.cfg.deliverySchema === "FBO") return (await ozon.client.fboPostingGet(n)).result;
+  try {
+    const fbs = (await ozon.client.fbsPostingGet(n)).result;
+    if (fbs || ozon.cfg.deliverySchema === "FBS") return fbs;
+  } catch (err) {
+    if (ozon.cfg.deliverySchema === "FBS" || !(err instanceof OzonError) || err.status !== 404) throw err;
+  }
+  return (await ozon.client.fboPostingGet(n)).result;
+}
+
 /** Обновить один заказ: номера и статусы отправлений, статус отмены, возвраты. */
 export async function syncOzonOrder(ozonOrderId: string, ozon: Ozon): Promise<void> {
   const oo = await prisma.ozonOrder.findUniqueOrThrow({ where: { id: ozonOrderId }, include: { order: true } });
   if (!oo.ozonOrderNumber) return;
   let postingNumbers = oo.postingNumbers;
 
-  // order/create может вернуть не все отправления — добираем список по номеру заказа (только FBS).
-  if (ozon.cfg.deliverySchema === "FBS") {
+  // order/create может вернуть не все отправления — добираем список по номеру заказа (поиск есть только у FBS).
+  if (ozon.cfg.deliverySchema !== "FBO") {
     const since = new Date(oo.createdAt.getTime() - 24 * 3600_000).toISOString();
     const to = new Date(Date.now() + 24 * 3600_000).toISOString();
     const found = new Set(postingNumbers);
@@ -281,7 +296,7 @@ export async function syncOzonOrder(ozonOrderId: string, ozon: Ozon): Promise<vo
 
   const postings: Record<string, Pick<FbsPosting, "status" | "substatus" | "tracking_number" | "delivering_date">> = {};
   for (const n of postingNumbers) {
-    const p = (await ozon.client.fbsPostingGet(n)).result;
+    const p = await getPosting(ozon, n);
     if (p) postings[n] = { status: p.status, substatus: p.substatus, tracking_number: p.tracking_number, delivering_date: p.delivering_date };
   }
   const status = aggregateStatus(Object.values(postings).map((p) => p.status ?? "unknown"));

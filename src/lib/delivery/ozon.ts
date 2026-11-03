@@ -305,6 +305,8 @@ export function createOzonClient(cfg: OzonConfig, deps: OzonDeps) {
     fbsPostingList: (filter: FbsListFilter, cursor?: string) =>
       call<FbsPostingListResponse>("/v4/posting/fbs/list", { filter, limit: 100, ...(cursor ? { cursor } : {}) }),
     fbsPostingGet: (postingNumber: string) => call<{ result?: FbsPosting }>("/v3/posting/fbs/get", { posting_number: postingNumber }),
+    // Отправление со склада Ozon (схемы FBO и MIX). Поля статуса — те же, что у FBS.
+    fboPostingGet: (postingNumber: string) => call<{ result?: FbsPosting }>("/v2/posting/fbo/get", { posting_number: postingNumber }),
     returnsList: (postingNumbers: string[], lastId?: number) =>
       call<ReturnsListResponse>("/v1/returns/list", {
         filter: { posting_numbers: postingNumbers.slice(0, 50) },

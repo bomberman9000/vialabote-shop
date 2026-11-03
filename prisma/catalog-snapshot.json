@@ -124,7 +124,10 @@
       "routineRole": "cleanse",
       "categorySlug": "ochishchenie",
       "categoryName": "Очищение",
-      "concerns": [],
+      "concerns": [
+        "acne",
+        "men"
+      ],
       "skinTypes": [],
       "gallery": []
     },
@@ -150,7 +153,9 @@
       "categorySlug": "syvorotki",
       "categoryName": "Сыворотки",
       "concerns": [
-        "anti-age"
+        "acne",
+        "anti-age",
+        "dull-tone"
       ],
       "skinTypes": [],
       "gallery": []
@@ -254,7 +259,9 @@
       "categorySlug": "syvorotki",
       "categoryName": "Сыворотки",
       "concerns": [
-        "dryness"
+        "dryness",
+        "dull-tone",
+        "men"
       ],
       "skinTypes": [],
       "gallery": []
@@ -281,6 +288,7 @@
       "categorySlug": "syvorotki",
       "categoryName": "Сыворотки",
       "concerns": [
+        "anti-age",
         "dull-tone"
       ],
       "skinTypes": [],

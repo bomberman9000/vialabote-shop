@@ -12,6 +12,7 @@ import { concernTitle } from "@/lib/concerns";
 import { ProductGallery } from "@/components/product-gallery";
 import { Reveal } from "@/components/reveal";
 import { productShareImage } from "@/lib/share-image";
+import { breadcrumbJsonLd, jsonLdHtml, productJsonLd } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export async function generateMetadata({
   return {
     title,
     description,
+    alternates: { canonical: `/product/${product.slug}` },
     openGraph: {
       type: "website",
       siteName: "VIA LABOTE",
@@ -96,8 +98,19 @@ export default async function ProductPage({ params }: { params: { slug: string }
     return { name, text: rest.join(" — ") };
   };
 
+  const jsonLd = [
+    productJsonLd({ ...product, price: displayPrice.price, images: product.media.map((m) => m.url), categoryName: product.category.name }),
+    breadcrumbJsonLd([
+      { name: "Главная", path: "/" },
+      { name: "Каталог", path: "/catalog" },
+      { name: product.category.name, path: `/catalog?category=${product.category.slug}` },
+      { name: product.title, path: `/product/${product.slug}` },
+    ]),
+  ];
+
   return (
     <div className="flex flex-col gap-16 md:gap-24">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }} />
       <div className="grid gap-8 md:grid-cols-[1.05fr_0.95fr] md:gap-12 lg:gap-16">
         {/* GALLERY — sticky на desktop, пока читается описание */}
         <div className="md:sticky md:top-28 md:self-start">

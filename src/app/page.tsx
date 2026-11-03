@@ -9,6 +9,7 @@ import { Reveal } from "@/components/reveal";
 import { toProductCardData } from "@/lib/product-card-data";
 import { Hero } from "@/components/hero";
 import { concernTitle, CONCERN_VISUALS } from "@/lib/concerns";
+import { jsonLdHtml, storeJsonLd } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,7 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-14 md:gap-20">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(storeJsonLd()) }} />
       <Hero />
 
       {/* WHY VIALABOTE — реальные формулировки бренда */}

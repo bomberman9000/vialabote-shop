@@ -117,6 +117,21 @@ describe("POST /api/orders — доставка Ozon", () => {
     expect(fake.count("/v2/order/create")).toBe(0);
   });
 
+  it("от 5 000 ₽ товаров доставка бесплатна: покупатель и банк платят только за товары, тариф Ozon сохранён в quote", async () => {
+    env();
+    const p = await product();
+    const fake = world(p, checkoutReply([{ sku: Number(p.ozonSku), quantity: 4 }]));
+    vi.stubGlobal("fetch", fake.fetch);
+    const res = await post({ ...body(p.id, pvz), items: [{ productId: p.id, quantity: 4 }] });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.delivery.priceKopecks).toBe(0);
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: json.orderId }, include: { ozon: true } });
+    expect(order).toMatchObject({ totalAmount: 600000, deliveryPrice: 0, deliveryMethod: "OZON_PVZ" });
+    expect((order.ozon!.quote as { priceKopecks: number }).priceKopecks).toBe(25000);
+    expect(fake.bodies("/uapi/acquiring/v1.0/payments")[0].Data.amount).toBe(6000);
+  });
+
   it("клиент не может подсунуть цену доставки: лишние поля отбрасываются, сумма — из checkout", async () => {
     env();
     const p = await product();

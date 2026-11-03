@@ -167,7 +167,8 @@ export async function createOzonOrderForPaid(orderId: string, ozon: Ozon | null 
     for (const i of order.items) if (i.product.ozonSku) priceBySku.set(Number(i.product.ozonSku), i.price);
     body = buildOrderCreateBody(request, quote.splits, {
       deliverySchema: ozon.cfg.deliverySchema,
-      deliveryPriceKopecks: order.deliveryPrice,
+      // Бесплатная доставка (покупатель заплатил 0) — в Ozon уходит его же тариф, как в платном заказе.
+      deliveryPriceKopecks: order.deliveryPrice || quote.priceKopecks,
       priceBySku,
     });
   } catch (err) {

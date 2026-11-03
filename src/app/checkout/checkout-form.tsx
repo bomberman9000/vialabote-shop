@@ -8,6 +8,7 @@ import { formatPrice } from "@/lib/money";
 import { formatDeliveryDate } from "@/lib/delivery/format";
 import { normalizeRuPhone } from "@/lib/delivery/ozon";
 import { formatRuPhone, nextPhoneValue } from "@/lib/phone";
+import { customerDeliveryPrice, FREE_DELIVERY_FROM_KOPECKS } from "@/lib/delivery/free-delivery";
 import type { CheckoutProfile } from "@/lib/checkout-profile";
 import type { MapTiles } from "@/lib/delivery/map-tiles";
 import { OzonDelivery, type OzonSelection } from "./ozon-delivery";
@@ -210,7 +211,10 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const useOzon = ozonEnabled && mode === "OZON_PVZ";
-  const deliveryPrice = useOzon && ozon ? ozon.quote.priceKopecks : 0;
+  // От порога бесплатной доставки покупатель за неё не платит (сервер считает так же — и сумму решает он).
+  const freeDelivery = totalAmount >= FREE_DELIVERY_FROM_KOPECKS;
+  const deliveryPrice = useOzon && ozon ? customerDeliveryPrice(totalAmount, ozon.quote.priceKopecks) : 0;
+  const deliveryText = (kopecks: number) => (kopecks === 0 ? "бесплатно" : formatPrice(kopecks));
   const total = totalAmount + deliveryPrice;
 
   const buyerErrors = check({ ...buyer, email }, useOzon && !other);
@@ -312,7 +316,7 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
   const deliveryRow = useOzon ? (
     <div className="flex justify-between gap-3 text-sm text-brand-600">
       <span>{ozon ? `Доставка Ozon, получение до ${formatDeliveryDate(ozon.quote.maxDate)}` : "Доставка Ozon — выберите пункт"}</span>
-      <span className="shrink-0">{ozon ? formatPrice(deliveryPrice) : "—"}</span>
+      <span className="shrink-0">{ozon ? deliveryText(deliveryPrice) : "—"}</span>
     </div>
   ) : ozonEnabled ? (
     <div className="flex justify-between gap-3 text-sm text-brand-600">
@@ -320,6 +324,12 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
       <span className="shrink-0">—</span>
     </div>
   ) : null;
+  const freeHint =
+    useOzon && !freeDelivery ? (
+      <p className="text-xs text-brand-500">
+        До бесплатной доставки — {formatPrice(FREE_DELIVERY_FROM_KOPECKS - totalAmount)}
+      </p>
+    ) : null;
   const lines = (
     <ul className="flex flex-col gap-2 text-sm">
       {items.map((i) => (
@@ -437,6 +447,7 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
             onChange={setOzon}
             map={ozonMap}
             initialPointId={lastPointId}
+            freeDelivery={freeDelivery}
           />
         ) : (
           <>
@@ -503,7 +514,7 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
       <div className="card hidden h-fit p-6 md:block">
         <h2 className="mb-4 font-semibold text-brand-800">Ваш заказ</h2>
         {lines}
-        {deliveryRow ? <div className="mt-2">{deliveryRow}</div> : null}
+        {deliveryRow ? <div className="mt-2 flex flex-col gap-1">{deliveryRow}{freeHint}</div> : null}
         <div className="mt-4 flex justify-between border-t border-brand-100 pt-4 font-semibold text-brand-800">
           <span>Итого</span>
           <span>{formatPrice(total)}</span>
@@ -516,6 +527,7 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
           <div className="mb-3 flex max-h-[45vh] flex-col gap-2 overflow-y-auto border-b border-brand-100 pb-3">
             {lines}
             {deliveryRow}
+            {freeHint}
           </div>
         ) : null}
         <div className="flex items-center gap-3">
@@ -528,7 +540,7 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
             <span className="block font-semibold text-brand-800">Итого {formatPrice(total)}</span>
             <span className="block truncate text-xs text-brand-500">
               {count} {goods(count)}
-              {useOzon ? (ozon ? ` · доставка ${formatPrice(deliveryPrice)}` : " · без доставки") : ""} · {summaryOpen ? "свернуть" : "состав"}
+              {useOzon ? (ozon ? ` · доставка ${deliveryText(deliveryPrice)}` : " · без доставки") : ""} · {summaryOpen ? "свернуть" : "состав"}
             </span>
           </button>
           <button type="submit" form="checkout-form" className="btn-primary shrink-0" disabled={disabled}>

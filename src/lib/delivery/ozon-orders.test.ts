@@ -190,6 +190,15 @@ describe.skipIf(!HAS_DB)("Ozon: заказ создаётся только по�
     ]);
   });
 
+  it("бесплатная доставка (покупатель заплатил 0) — в order/create уходит тариф Ozon из свежего checkout", async () => {
+    clearOzonCache();
+    const { order: o, sku, offer } = await order();
+    await prisma.order.update({ where: { id: o.id }, data: { deliveryPrice: 0 } });
+    const fake = happy(sku, offer);
+    expect((await createOzonOrderForPaid(o.id, testOzon(fake))).done).toBe(true);
+    expect(fake.bodies(CREATE)[0].splits[0].delivery_method.price).toEqual({ units: 250, nanos: 0, currency_code: "RUB" });
+  });
+
   it("повтор (вебхук пришёл дважды) — второй order/create не уходит", async () => {
     clearOzonCache();
     const { order: o, sku, offer } = await order();

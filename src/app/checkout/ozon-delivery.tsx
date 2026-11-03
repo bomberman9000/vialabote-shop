@@ -47,6 +47,7 @@ export function OzonDelivery({
   onChange,
   map = null,
   initialPointId = null,
+  freeDelivery = false,
 }: {
   items: { productId: string; quantity: number }[];
   onChange: (s: OzonSelection | null) => void;
@@ -54,6 +55,8 @@ export function OzonDelivery({
   map?: MapTiles | null;
   /** Пункт прошлого заказа (профиль или этот браузер). Закрытый пункт просто не подставляется. */
   initialPointId?: string | null;
+  /** сумма товаров от порога — покупатель за доставку не платит (цена Ozon в onChange та же) */
+  freeDelivery?: boolean;
 }) {
   const [points, setPoints] = useState<OzonPoint[]>([]);
   const [pointId, setPointId] = useState<string | null>(null);
@@ -397,7 +400,7 @@ export function OzonDelivery({
                     <span className="text-brand-600">{p.address}</span>
                     {q?.available ? (
                       <span className="block text-brand-800">
-                        {formatPrice(q.priceKopecks)} · получение до {formatDeliveryDate(q.maxDate)}
+                        {freeDelivery ? "Бесплатно" : formatPrice(q.priceKopecks)} · получение до {formatDeliveryDate(q.maxDate)}
                       </span>
                     ) : null}
                     {q && !q.available ? <span className="block text-red-600">{deliveryReasonText(q.reason)}</span> : null}
@@ -415,7 +418,7 @@ export function OzonDelivery({
       ) : null}
       {quote ? (
         <p className="font-medium text-brand-800">
-          Доставка {formatPrice(quote.priceKopecks)}, получение не позднее {formatDeliveryDate(quote.maxDate)}
+          Доставка {freeDelivery ? "бесплатно" : formatPrice(quote.priceKopecks)}, получение не позднее {formatDeliveryDate(quote.maxDate)}
         </p>
       ) : null}
       {message ? <p className="text-red-600">{message}</p> : null}

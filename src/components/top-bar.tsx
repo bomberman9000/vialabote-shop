@@ -1,7 +1,7 @@
 import { Truck, ShieldCheck, BadgeCheck } from "lucide-react";
 
 const TOP_BAR_ITEMS = [
-  { icon: Truck, label: "Бесплатная доставка от 5 000 ₽" },
+  { icon: Truck, label: "Бесплатная доставка в пункты выдачи Ozon от 5 000 ₽" },
   { icon: ShieldCheck, label: "Оригинальная продукция" },
   { icon: BadgeCheck, label: "Дерматологически протестировано" },
 ];

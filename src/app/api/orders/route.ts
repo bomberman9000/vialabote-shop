@@ -15,6 +15,7 @@ import { allowRequest, checkBuyer, getCheckoutOzon, isLimited, quoteCart, record
 import { ozonDeliverySchema, personNameSchema } from "@/lib/delivery/ozon-http";
 import type { OzonOrderRequest } from "@/lib/delivery/ozon-orders";
 import { rememberCheckout } from "@/lib/checkout-profile";
+import { customerDeliveryPrice } from "@/lib/delivery/free-delivery";
 
 const checkoutSchema = z.object({
   customerName: z.string().min(2),
@@ -136,7 +137,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Ozon не доставит этот заказ по выбранному адресу", reason: quote.reason }, { status: 409 });
     }
     ozonDelivery = {
-      price: quote.priceKopecks,
+      // От порога бесплатной доставки покупатель за неё не платит; тариф Ozon остаётся в quote.
+      price: customerDeliveryPrice(goodsAmount, quote.priceKopecks),
       maxDate: new Date(quote.maxDate),
       method: d.destination.type === "PVZ" ? "OZON_PVZ" : "OZON_COURIER",
       request: { destination: d.destination, recipient: { ...d.recipient, phone }, ...(d.courier ? { courier: d.courier } : {}) },

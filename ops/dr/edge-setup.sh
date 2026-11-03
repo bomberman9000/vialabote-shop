@@ -98,7 +98,15 @@ EOF
 server { listen 80 default_server; listen [::]:80 default_server; server_name _; return 444; }
 server {
     listen 80; listen [::]:80;
-    server_name vialabote.ru www.vialabote.ru shop.vialabote.ru;
+    server_name www.vialabote.ru;
+    # ACME-челлендж для www отдаём с webroot (продление сертификата идёт по нему),
+    # всё остальное — на основной домен.
+    location /.well-known/acme-challenge/ { root /var/www/acme; }
+    location / { return 301 http://vialabote.ru\$request_uri; }
+}
+server {
+    listen 80; listen [::]:80;
+    server_name vialabote.ru shop.vialabote.ru;
     location /.well-known/acme-challenge/ { root /var/www/acme; }
     location / { include snippets/vialabote-edge-proxy.conf; }
 }
@@ -153,17 +161,43 @@ server { listen 80 default_server; listen [::]:80 default_server; server_name _;
 server { listen 443 ssl default_server; listen [::]:443 ssl default_server; server_name _; ssl_reject_handshake on; }
 server {
     listen 80; listen [::]:80;
-    server_name vialabote.ru www.vialabote.ru shop.vialabote.ru;
+    server_name www.vialabote.ru;
+    # ACME-челлендж для www отдаём с webroot (продление сертификата идёт по нему),
+    # всё остальное — сразу на основной домен.
+    location /.well-known/acme-challenge/ { root /var/www/acme; }
+    location / { return 301 https://vialabote.ru\$request_uri; }
+}
+server {
+    listen 80; listen [::]:80;
+    server_name vialabote.ru shop.vialabote.ru;
     location /.well-known/acme-challenge/ { root /var/www/acme; }
     location / { return 301 https://\$host\$request_uri; }
 }
 server {
     listen 443 ssl; listen [::]:443 ssl;
-    server_name vialabote.ru www.vialabote.ru shop.vialabote.ru;
+    server_name www.vialabote.ru;
     ssl_certificate $L/fullchain.pem;
     ssl_certificate_key $L/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_session_cache shared:vl:10m;
+    # www отдавал полный дубль основного домена (тот же контент, тот же canonical
+    # на apex) — поисковик видел два адреса одной страницы. Один редирект на apex.
+    location / { return 301 https://vialabote.ru\$request_uri; }
+}
+server {
+    listen 443 ssl; listen [::]:443 ssl;
+    server_name vialabote.ru shop.vialabote.ru;
+    ssl_certificate $L/fullchain.pem;
+    ssl_certificate_key $L/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:vl:10m;
+    # Verification-only overlay, scoped to homepage and HTML responses.
+    location = / {
+        include snippets/vialabote-edge-proxy.conf;
+        proxy_set_header Accept-Encoding "";
+        sub_filter_once on;
+        sub_filter '</head>' '\$seo_verification_tags</head>';
+    }
     location / { include snippets/vialabote-edge-proxy.conf; }
 }
 EOF

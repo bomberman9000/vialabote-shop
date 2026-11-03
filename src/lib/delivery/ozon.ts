@@ -364,13 +364,19 @@ export interface DateRange {
   from?: string;
   to?: string;
 }
+export interface CheckoutTimeslot {
+  timeslot_id?: number;
+  /** Может прийти null — см. summarizeCheckout. */
+  client_date_range?: DateRange | null;
+  logistic_date_range?: DateRange;
+}
 export interface CheckoutSplit {
   commissions?: { total?: { amount?: string; currency?: string } } | null;
   delivery_method?: {
     id?: number;
     name?: string;
     delivery_type?: "UNSPECIFIED" | "POSTAMAT" | "COURIER" | "PVZ";
-    timeslots?: { timeslot_id?: number; client_date_range?: DateRange; logistic_date_range?: DateRange }[];
+    timeslots?: CheckoutTimeslot[];
     unavailable_reason?: string;
   };
   delivery_schema?: string;
@@ -522,18 +528,22 @@ export function summarizeCheckout(res: CheckoutResponse): QuoteSummary {
     const m = s.delivery_method;
     const type = m?.delivery_type;
     if (!m?.id || !type || type === "UNSPECIFIED" || !s.warehouse_id) return { available: false, reason: "NO_METHOD" };
-    const slots = (m.timeslots ?? []).filter(
-      (t) => t.timeslot_id && t.client_date_range?.to && t.logistic_date_range?.from && t.logistic_date_range?.to,
-    );
+    // Срок получения — client_date_range.to. Ozon присылает его не всегда: у части пунктов (Самара,
+    // Свободы 69, 2026-11-03) он null во всех таймслотах, у других — только в первом. Там, где он есть,
+    // он совпадает с концом logistic_date_range (проверено на пунктах Самары и Москвы), поэтому без него
+    // берём конец логистического интервала. Раньше такие таймслоты отбрасывались целиком, и рабочий
+    // пункт с ценой показывался покупателю как «недоступен» (NO_TIMESLOT).
+    const clientTo = (t: CheckoutTimeslot) => t.client_date_range?.to ?? t.logistic_date_range!.to!;
+    const slots = (m.timeslots ?? []).filter((t) => t.timeslot_id && t.logistic_date_range?.from && t.logistic_date_range?.to);
     if (slots.length === 0) return { available: false, reason: "NO_TIMESLOT" };
-    const best = slots.reduce((a, b) => (Date.parse(b.client_date_range!.to!) < Date.parse(a.client_date_range!.to!) ? b : a));
+    const best = slots.reduce((a, b) => (Date.parse(clientTo(b)) < Date.parse(clientTo(a)) ? b : a));
     chosen.push({
       warehouseId: s.warehouse_id,
       deliveryMethodId: m.id,
       deliveryType: type,
       timeslotId: best.timeslot_id!,
       logisticDateRange: { from: best.logistic_date_range!.from!, to: best.logistic_date_range!.to! },
-      clientDateTo: best.client_date_range!.to!,
+      clientDateTo: clientTo(best),
       priceKopecks: price,
       items: (s.items ?? [])
         .filter((i) => i.sku && i.quantity)

@@ -374,6 +374,37 @@ describe("summarizeCheckout: цена и максимальный срок", () 
     expect(summarizeCheckout({ splits: [split({ unavailable_reason: "OUT_OF_STOCK" })] })).toEqual({ available: false, reason: "OUT_OF_STOCK" });
     expect(summarizeCheckout({ splits: [split({ unavailable_reason: "UNSPECIFIED" })] }).available).toBe(true);
   });
+  it("client_date_range = null во всех таймслотах (Самара, Свободы 69) — пункт доступен, срок — конец логистики", () => {
+    // Форма ответа Ozon 2026-11-03: 11 таймслотов, у всех client_date_range: null, цена 94 ₽.
+    const slot = (id: number, day: number) => ({
+      timeslot_id: id,
+      logistic_date_range: { from: `2026-11-0${day}T16:00:00Z`, to: `2026-11-0${day}T17:00:00Z` },
+      client_date_range: null,
+    });
+    const s = summarizeCheckout({
+      splits: [split({ commissions: { total: { amount: "94" } }, delivery_method: { id: 1237322, delivery_type: "PVZ", timeslots: [slot(2, 5), slot(1, 4)] } })],
+    });
+    expect(s).toMatchObject({ available: true, priceKopecks: 9400, maxDate: "2026-11-04T17:00:00Z" });
+    if (s.available) expect(s.splits[0]).toMatchObject({ timeslotId: 1, logisticDateRange: { from: "2026-11-04T16:00:00Z", to: "2026-11-04T17:00:00Z" } });
+  });
+  it("смешанно (Москва): первый таймслот со сроком, следующие без — выбирается самый ранний", () => {
+    const s = summarizeCheckout({
+      splits: [
+        split({
+          delivery_method: {
+            id: 1261805,
+            delivery_type: "PVZ",
+            timeslots: [
+              { timeslot_id: 9, client_date_range: null, logistic_date_range: { from: "2026-11-09T17:00:00Z", to: "2026-11-09T18:00:00Z" } },
+              { timeslot_id: 8, client_date_range: { from: "2026-11-07T17:00:00Z", to: "2026-11-08T18:00:00Z" }, logistic_date_range: { from: "2026-11-08T17:00:00Z", to: "2026-11-08T18:00:00Z" } },
+            ],
+          },
+        }),
+      ],
+    });
+    expect(s).toMatchObject({ available: true, maxDate: "2026-11-08T18:00:00Z" });
+    if (s.available) expect(s.splits[0].timeslotId).toBe(8);
+  });
   it("нет таймслотов / пустой ответ", () => {
     expect(summarizeCheckout({ splits: [split({ delivery_method: { id: 1, delivery_type: "PVZ", timeslots: [] } })] })).toEqual({ available: false, reason: "NO_TIMESLOT" });
     expect(summarizeCheckout({})).toEqual({ available: false, reason: "NO_SPLITS" });

@@ -206,8 +206,8 @@ export default async function ProductPage({ params }: { params: { slug: string }
           ) : null}
 
           <div className="flex flex-col gap-2 border-t border-brand-100 pt-5 text-[13px] text-brand-600">
-            <span className="inline-flex items-center gap-2.5"><Truck size={16} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Доставка по России курьером и в пункты выдачи</span>
-            <span className="inline-flex items-center gap-2.5"><CreditCard size={16} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Безопасная онлайн-оплата картой через ЮKassa</span>
+            <span className="inline-flex items-center gap-2.5"><Truck size={16} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Доставка по России в пункты выдачи Ozon</span>
+            <span className="inline-flex items-center gap-2.5"><CreditCard size={16} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Безопасная онлайн-оплата картой через Точка Банк</span>
           </div>
         </div>
       </div>
@@ -276,7 +276,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
           ) : null}
           <PdpRow title="Доставка и оплата">
             <p className="max-w-[62ch] text-[15px] leading-relaxed text-brand-700">
-              Доставка по России курьером и в пункты выдачи. Онлайн-оплата картой через ЮKassa —
+              Доставка по России в пункты выдачи Ozon — цена и срок видны до оплаты. Онлайн-оплата картой через Точка Банк —
               подтверждение оплаты приходит сразу после списания средств.
             </p>
           </PdpRow>

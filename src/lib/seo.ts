@@ -37,13 +37,23 @@ export function pageMetadata(path: string, title: string, description: string): 
  *
  * Подзаголовок из карточки бывает короче 70 символов («Без аромата · СТЕБЛЕВ»): в выдаче
  * и в превью такое описание показывают целиком, и обрезанный фрагмент ничего не сообщает.
- * Дополняем его названием товара и тем, что магазин известен — без выдуманных обещаний.
+ * Дополняем его хвостом про магазин — без выдуманных обещаний.
+ *
+ * Держим описание в 70–160 символах: короче — выдача обрезает, длиннее — поисковик
+ * обрезает сам и тавтологию «… Увлажняющая сыворотка для лица с гиалуронной кислотой…»
+ * в хвосте описания только мешает.
  */
+const DESC_MIN = 70;
+const DESC_MAX = 160;
+const DESC_TAIL = " — уход и косметика VIA LABOTE с доставкой по России.";
+
 export function productMetaDescription(base: string | null | undefined, title: string): string {
   const text = (base || "").trim();
-  if (text.length >= 70) return text;
-  const tail = `${title} — уход и косметика VIA LABOTE: описание, применение и доставка по России.`;
-  return text ? `${text} ${tail}` : tail;
+  if (text.length >= DESC_MIN && text.length <= DESC_MAX) return text;
+  if (text.length > DESC_MAX) return `${text.slice(0, DESC_MAX - 1).trimEnd()}…`;
+  // Подзаголовок короткий: хвост про магазин делает описание осмысленным.
+  const withTail = text ? `${text}${DESC_TAIL}` : `${title}.${DESC_TAIL}`;
+  return withTail;
 }
 
 /** Копейки -> «1234.50» (schema.org ждёт число в рублях строкой с точкой). */

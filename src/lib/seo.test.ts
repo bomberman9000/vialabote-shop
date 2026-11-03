@@ -69,7 +69,14 @@ describe("мета-описания страниц", () => {
     expect(d.startsWith("Без аромата · СТЕБЛЕВ")).toBe(true);
     expect(d.length).toBeGreaterThanOrEqual(70);
     expect(d.length).toBeLessThanOrEqual(160);
-    expect(d).toContain("Масло для бороды");
+    expect(d).toContain("VIA LABOTE");
+  });
+
+  it("слишком длинное описание обрезается, а не тавтологизируется", () => {
+    const long = "Описание ".repeat(40);
+    const d = productMetaDescription(long, "Масло");
+    expect(d.length).toBeLessThanOrEqual(160);
+    expect(d.endsWith("…")).toBe(true);
   });
 
   it("достаточно длинное описание не меняется", () => {
@@ -80,6 +87,7 @@ describe("мета-описания страниц", () => {
   it("без текста в карточке описание всё равно непустое", () => {
     const d = productMetaDescription(null, "Масло для бороды");
     expect(d.length).toBeGreaterThanOrEqual(70);
+    expect(d.length).toBeLessThanOrEqual(160);
     expect(d).toContain("VIA LABOTE");
   });
 });

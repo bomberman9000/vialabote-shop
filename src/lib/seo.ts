@@ -1,10 +1,50 @@
 // Разметка schema.org (JSON-LD) для поисковиков: товар с ценой и наличием, хлебные крошки, магазин.
 // Яндекс и Google показывают по ней цену и наличие прямо в выдаче.
-import { SITE_URL } from "@/lib/share-image";
+import type { Metadata } from "next";
+import { SHARE_IMAGE, SITE_URL } from "@/lib/share-image";
 
 export const BRAND = "VIA LABOTE";
 
 const abs = (path: string) => (/^https?:\/\//.test(path) ? path : `${SITE_URL}${path.startsWith("/") ? "" : "/"}${path}`);
+
+/**
+ * Мета-описание страницы: canonical, OG и Twitter на одном адресе.
+ *
+ * `openGraph` страницы целиком заменяет общий из layout — siteName и locale повторяем.
+ * Без этого на юридических страницах og:url оставался бы адресом главной,
+ * а поисковик получил бы описание главной вместо описания страницы.
+ */
+export function pageMetadata(path: string, title: string, description: string): Metadata {
+  return {
+    title,
+    description,
+    alternates: { canonical: path },
+    openGraph: {
+      type: "website",
+      siteName: BRAND,
+      locale: "ru_RU",
+      url: path,
+      title,
+      description,
+      images: [SHARE_IMAGE],
+    },
+    twitter: { card: "summary_large_image", title, description, images: [SHARE_IMAGE.url] },
+  };
+}
+
+/**
+ * Описание товара для meta/og-описания.
+ *
+ * Подзаголовок из карточки бывает короче 70 символов («Без аромата · СТЕБЛЕВ»): в выдаче
+ * и в превью такое описание показывают целиком, и обрезанный фрагмент ничего не сообщает.
+ * Дополняем его названием товара и тем, что магазин известен — без выдуманных обещаний.
+ */
+export function productMetaDescription(base: string | null | undefined, title: string): string {
+  const text = (base || "").trim();
+  if (text.length >= 70) return text;
+  const tail = `${title} — уход и косметика VIA LABOTE: описание, применение и доставка по России.`;
+  return text ? `${text} ${tail}` : tail;
+}
 
 /** Копейки -> «1234.50» (schema.org ждёт число в рублях строкой с точкой). */
 const rub = (kopecks: number) => (kopecks / 100).toFixed(2);

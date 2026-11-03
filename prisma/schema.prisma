@@ -361,3 +361,13 @@ model OrderItem {
   price     Int
   quantity  Int
 }
+
+// Отправления FBS с маркетплейса Ozon (не заказы сайта), учтённые в остатке сайта — src/lib/stock/ozon-stock-sync.ts.
+// state: WRITTEN_OFF (списано с сайта) | RETURNED (отменено, вернули) | SKIPPED (отменено до учёта).
+model OzonMarketplacePosting {
+  postingNumber String   @id
+  state         String
+  items         Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

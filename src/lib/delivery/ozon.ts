@@ -304,6 +304,9 @@ export function createOzonClient(cfg: OzonConfig, deps: OzonDeps) {
     // /v3/posting/fbs/list отключён Ozon с 31.08.2026 — только v4.
     fbsPostingList: (filter: FbsListFilter, cursor?: string) =>
       call<FbsPostingListResponse>("/v4/posting/fbs/list", { filter, limit: 100, ...(cursor ? { cursor } : {}) }),
+    // Остатки на складе FBS продавца (до 100 позиций за раз).
+    stocksUpdate: (stocks: { offer_id: string; stock: number; warehouse_id: number }[]) =>
+      call<{ result?: { offer_id?: string; updated?: boolean; errors?: { code?: string; message?: string }[] }[] }>("/v2/products/stocks", { stocks }),
     fbsPostingGet: (postingNumber: string) => call<{ result?: FbsPosting }>("/v3/posting/fbs/get", { posting_number: postingNumber }),
     // Отправление со склада Ozon (схемы FBO и MIX). Поля статуса — те же, что у FBS.
     fboPostingGet: (postingNumber: string) => call<{ result?: FbsPosting }>("/v2/posting/fbo/get", { posting_number: postingNumber }),

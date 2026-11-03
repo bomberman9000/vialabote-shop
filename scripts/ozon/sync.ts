@@ -4,11 +4,15 @@
 // Код выхода 1 — были ошибки (подробности в lastError заказов, без данных покупателя).
 import { prisma } from "@/lib/prisma";
 import { syncOzonOrders } from "@/lib/delivery/ozon-orders";
+import { getProdOzon } from "@/lib/delivery/ozon-service";
+import { syncOzonStock } from "@/lib/stock/ozon-stock-sync";
 
+// После заказов — остатки: продажи маркетплейса -> сайт, затем сайт -> склад FBS (OZON_FBS_WAREHOUSE_ID).
 syncOzonOrders()
-  .then((r) => {
-    console.log(JSON.stringify(r));
-    if (r.errors.length) process.exitCode = 1;
+  .then(async (r) => {
+    const stock = await syncOzonStock(getProdOzon());
+    console.log(JSON.stringify({ ...r, stock }));
+    if (r.errors.length || stock.errors.length) process.exitCode = 1;
   })
   .catch((err) => {
     console.error(err instanceof Error ? err.message : err);

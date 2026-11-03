@@ -20,7 +20,7 @@ import type { Prisma } from "@prisma/client";
 
 export type Tx = Prisma.TransactionClient;
 export type StockReason = "ADJUST" | "RESERVE" | "RELEASE" | "WRITE_OFF";
-export type StockSource = "TELEGRAM" | "WEB_ADMIN" | "SITE_ORDER" | "PAYMENT_WEBHOOK";
+export type StockSource = "TELEGRAM" | "WEB_ADMIN" | "SITE_ORDER" | "PAYMENT_WEBHOOK" | "OZON_MARKETPLACE";
 export const MAX_STOCK = 100_000;
 
 export type StockErrorCode = "OUT_OF_STOCK" | "NOT_FOUND" | "VERSION_CONFLICT" | "INVALID";

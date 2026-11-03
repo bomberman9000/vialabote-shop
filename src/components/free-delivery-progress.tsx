@@ -2,12 +2,14 @@
 
 import { Truck } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
+import { useCartTotals } from "@/lib/use-cart-totals";
 import { formatPrice } from "@/lib/money";
 import { FREE_DELIVERY_FROM_KOPECKS } from "@/lib/delivery/free-delivery";
 
 /** «Ещё N ₽ — и доставка бесплатно» с полоской: в корзине и на карточке товара. Пустая корзина — ничего. */
 export function FreeDeliveryProgress({ className = "" }: { className?: string }) {
-  const { items, totalAmount } = useCart();
+  const { items } = useCart();
+  const { goodsAmount: totalAmount } = useCartTotals();
   if (items.length === 0) return null;
   const left = FREE_DELIVERY_FROM_KOPECKS - totalAmount;
   const pct = Math.min(100, Math.round((totalAmount / FREE_DELIVERY_FROM_KOPECKS) * 100));

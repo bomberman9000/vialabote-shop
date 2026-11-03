@@ -326,6 +326,21 @@ describe("POST /api/orders — effectivePrice() как единственный 
   });
 });
 
+describe("POST /api/orders — наборы со скидкой", () => {
+  it("масло для бороды + гель-масло: −10% в сумме заказа, наборы записаны; цены позиций не меняются", async () => {
+    const oil = await prisma.product.upsert({ where: { slug: "beard-oil-steblev" }, update: {}, create: { slug: "beard-oil-steblev", title: "Масло T", description: "", price: 55000, imageUrl: "/x.png", stock: 10, status: "published", isActive: true, categoryId } });
+    const gel = await prisma.product.upsert({ where: { slug: "hydrophilic-gel-oil" }, update: {}, create: { slug: "hydrophilic-gel-oil", title: "Гель T", description: "", price: 50000, imageUrl: "/x.png", stock: 10, status: "published", isActive: true, categoryId } });
+    productIds.push(oil.id, gel.id);
+    const res = await POST(req(checkoutBody([{ productId: oil.id, quantity: 1 }, { productId: gel.id, quantity: 1 }])));
+    expect(res.status).toBe(200);
+    const { orderId } = await res.json();
+    orderIds.push(orderId);
+    const order = await getOrderTotal(orderId);
+    expect(order).toMatchObject({ totalAmount: 94500, bundleDiscount: 10500, bundles: "Мужской −10%: −105 ₽" });
+    expect(order.items.map((i) => i.price).sort()).toEqual([50000, 55000]);
+  });
+});
+
 describe("POST /api/orders — склад и эквайринг Точки", () => {
   it("заказ резервирует остаток и пишет журнал; две покупки последней единицы — одна проходит", async () => {
     const product = await makeProduct({ price: 100000, stock: 1 });

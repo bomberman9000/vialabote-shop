@@ -293,6 +293,9 @@ model Order {
   // Доставка, выбранная в checkout. null — заказы до Ozon и без выбора службы.
   deliveryMethod  String? // "OZON_PVZ" | "OZON_COURIER"
   deliveryPrice   Int? // копейки, уже включены в totalAmount
+  // Скидка за наборы (src/lib/bundles.ts), копейки; totalAmount уже за вычетом. bundles — какие наборы сработали.
+  bundleDiscount  Int         @default(0)
+  bundles         String?
   deliveryMaxDate DateTime? // крайний срок получения, показанный покупателю (UTC)
   ozon            OzonOrder?
   createdAt       DateTime    @default(now())

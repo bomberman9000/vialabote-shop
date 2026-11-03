@@ -16,6 +16,7 @@ import { ozonDeliverySchema, personNameSchema } from "@/lib/delivery/ozon-http";
 import type { OzonOrderRequest } from "@/lib/delivery/ozon-orders";
 import { rememberCheckout } from "@/lib/checkout-profile";
 import { customerDeliveryPrice } from "@/lib/delivery/free-delivery";
+import { applyBundles } from "@/lib/bundles";
 
 const checkoutSchema = z.object({
   customerName: z.string().min(2),
@@ -82,10 +83,15 @@ export async function POST(req: Request) {
     };
   });
 
-  const goodsAmount = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  if (goodsAmount <= 0 || orderItems.some((i) => i.price <= 0)) {
+  const itemsAmount = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  if (itemsAmount <= 0 || orderItems.some((i) => i.price <= 0)) {
     return NextResponse.json({ error: "Некорректная сумма заказа" }, { status: 400 });
   }
+  // Наборы со скидкой — по ценам из БД, не от клиента. Сумма товаров дальше (оплата, порог бесплатной
+  // доставки) — уже со скидкой за наборы.
+  const slugById = new Map(products.map((p) => [p.id, p.slug]));
+  const bundleResult = applyBundles(orderItems.map((i) => ({ slug: slugById.get(i.productId)!, price: i.price, quantity: i.quantity })));
+  const goodsAmount = itemsAmount - bundleResult.discount;
 
   const tochka = getTochkaConfig();
 
@@ -169,6 +175,10 @@ export async function POST(req: Request) {
     consentSource: "WEB_CHECKOUT",
     legalVersion: LEGAL_VERSION,
     totalAmount,
+    bundleDiscount: bundleResult.discount,
+    bundles: bundleResult.applied.length
+      ? bundleResult.applied.map((a) => `${a.title} −${a.percent}%: −${a.discount / 100} ₽`).join("; ")
+      : null,
     ...(ozonDelivery
       ? {
           deliveryMethod: ozonDelivery.method,

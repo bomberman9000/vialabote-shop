@@ -12,6 +12,8 @@ import { customerDeliveryPrice, FREE_DELIVERY_FROM_KOPECKS } from "@/lib/deliver
 import type { CheckoutProfile } from "@/lib/checkout-profile";
 import type { MapTiles } from "@/lib/delivery/map-tiles";
 import { OzonDelivery, type OzonSelection } from "./ozon-delivery";
+import { CartBundles } from "@/components/cart-bundles";
+import { useCartTotals } from "@/lib/use-cart-totals";
 
 /** Пункт последнего заказа в этом браузере — для гостя; у зарегистрированного он ещё и в профиле. */
 const LAST_POINT_KEY = "vialabote-ozon-point";
@@ -152,7 +154,9 @@ function PersonFields({
 }
 
 export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
-  const { items, totalAmount, clear } = useCart();
+  const { items, clear } = useCart();
+  // Сумма товаров со скидкой за наборы — ей же считает сервер; от неё порог бесплатной доставки.
+  const { goodsAmount: totalAmount } = useCartTotals();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -514,6 +518,7 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
       <div className="card hidden h-fit p-6 md:block">
         <h2 className="mb-4 font-semibold text-brand-800">Ваш заказ</h2>
         {lines}
+        <CartBundles className="mt-2" />
         {deliveryRow ? <div className="mt-2 flex flex-col gap-1">{deliveryRow}{freeHint}</div> : null}
         <div className="mt-4 flex justify-between border-t border-brand-100 pt-4 font-semibold text-brand-800">
           <span>Итого</span>
@@ -526,6 +531,7 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
         {summaryOpen ? (
           <div className="mb-3 flex max-h-[45vh] flex-col gap-2 overflow-y-auto border-b border-brand-100 pb-3">
             {lines}
+            <CartBundles />
             {deliveryRow}
             {freeHint}
           </div>

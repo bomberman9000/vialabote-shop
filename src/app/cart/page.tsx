@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Minus, Plus, X } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { formatPrice } from "@/lib/money";
+import { FreeDeliveryProgress } from "@/components/free-delivery-progress";
 
 export default function CartPage() {
   const { items, removeItem, setQuantity, totalAmount } = useCart();
@@ -90,6 +91,7 @@ export default function CartPage() {
       </div>
 
       <div className="card flex flex-col items-end gap-3 p-6">
+        <FreeDeliveryProgress className="max-w-md self-stretch sm:self-end" />
         <p className="text-lg">
           Итого: <span className="font-semibold text-brand-800">{formatPrice(totalAmount)}</span>
         </p>

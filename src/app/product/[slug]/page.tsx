@@ -5,6 +5,7 @@ import { ChevronLeft, CreditCard, Truck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/money";
 import { AddToCartButton } from "@/components/add-to-cart-button";
+import { FreeDeliveryProgress } from "@/components/free-delivery-progress";
 import { ProductCard, ProductGrid } from "@/components/product-card";
 import { toProductCardData } from "@/lib/product-card-data";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
@@ -13,6 +14,7 @@ import { ProductGallery } from "@/components/product-gallery";
 import { Reveal } from "@/components/reveal";
 import { productShareImage } from "@/lib/share-image";
 import { breadcrumbJsonLd, jsonLdHtml, productJsonLd } from "@/lib/seo";
+import { CROSS_SELL, orderCrossSell } from "@/lib/cross-sell";
 
 export const dynamic = "force-dynamic";
 
@@ -69,15 +71,24 @@ export default async function ProductPage({ params }: { params: { slug: string }
 
   if (!product || !product.isActive) notFound();
 
-  const related = await prisma.product.findMany({
+  // «С этим покупают»: пары из наборов владельца, затем товары тех же подборок, затем той же категории.
+  const pinned = CROSS_SELL[product.slug] ?? [];
+  const concernIds = product.concerns.map((c) => c.concernId);
+  const candidates = await prisma.product.findMany({
     where: {
       isActive: true,
-      categoryId: product.categoryId,
       id: { not: product.id },
+      OR: [
+        { slug: { in: pinned } },
+        ...(concernIds.length ? [{ concerns: { some: { concernId: { in: concernIds } } } }] : []),
+        { categoryId: product.categoryId },
+      ],
     },
-    take: 4,
-    include: { discount: true },
+    orderBy: { createdAt: "asc" },
+    include: { discount: true, concerns: { select: { concernId: true } } },
   });
+  const sameConcern = (c: (typeof candidates)[number]) => c.concerns.some((x) => concernIds.includes(x.concernId));
+  const related = orderCrossSell(product.slug, [...candidates.filter(sameConcern), ...candidates.filter((c) => !sameConcern(c))]);
 
   const actives = parseLines(product.activeIngredients);
   const howToUseSteps = parseLines(product.howToUse);
@@ -178,6 +189,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
               stock: product.stock,
             }}
           />
+          <FreeDeliveryProgress className="max-w-md" />
 
           {actives.length > 0 ? (
             <div className="flex flex-col gap-2.5 border-t border-brand-100 pt-5">
@@ -283,13 +295,13 @@ export default async function ProductPage({ params }: { params: { slug: string }
         </div>
       </Reveal>
 
-      {/* CROSS-SELL — только реальная связь "тот же уход/категория", без выдуманных routine-шагов */}
+      {/* CROSS-SELL — пары из наборов владельца, затем те же подборки и категория */}
       {related.length > 0 ? (
         <Reveal>
         <section aria-labelledby="related-title">
           <div className="mb-8 flex flex-col gap-2">
             <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">Рекомендации</p>
-            <h2 id="related-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">Дополните уход</h2>
+            <h2 id="related-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">С этим покупают</h2>
           </div>
           <ProductGrid>
             {related.map((p) => (

@@ -38,7 +38,7 @@ export function BundleOffers({ offers }: { offers: BundleOffer[] }) {
         return (
           <article key={o.id} className="card flex flex-col gap-4 p-5">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-semibold text-brand-900">Набор «{o.title}»</h3>
+              <h3 className="text-lg font-semibold text-brand-900">Комбо-уход «{o.title}»</h3>
               <span className="shrink-0 rounded-full bg-gold-400 px-2.5 py-1 text-xs font-bold text-brand-900">−{o.percent}%</span>
             </div>
             <div className="flex items-center justify-center gap-2 rounded-xl bg-[#f3eee4] p-3">
@@ -77,7 +77,7 @@ export function BundleOffers({ offers }: { offers: BundleOffer[] }) {
                 }}
               >
                 <ShoppingBag aria-hidden className="h-4 w-4" />
-                {!inStock ? "Нет в наличии" : added === o.id ? "В корзине ✓" : "Добавить набор"}
+                {!inStock ? "Нет в наличии" : added === o.id ? "В корзине ✓" : "Добавить комбо"}
               </button>
             </div>
           </article>

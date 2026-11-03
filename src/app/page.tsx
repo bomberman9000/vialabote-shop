@@ -127,9 +127,9 @@ export default async function HomePage() {
             <div className="mb-8 flex flex-col gap-2">
               <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">Выгоднее вместе</p>
               <h2 id="bundles-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">
-                Наборы со скидкой −10%
+                Комбо-уходы со скидкой −10%
               </h2>
-              <p className="text-sm text-brand-600">Скидка применяется сама, когда оба товара в корзине.</p>
+              <p className="text-sm text-brand-600">Средства, которые работают в паре. Скидка применяется сама, когда оба товара в корзине.</p>
             </div>
             <BundleOffers offers={bundleOffers} />
           </section>

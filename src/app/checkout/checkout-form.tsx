@@ -411,6 +411,12 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
           </fieldset>
         )}
 
+        {useOzon && !other ? (
+          <p className="rounded-lg bg-gold-50 px-3 py-2 text-xs text-brand-700">
+            Заказ придёт в приложение Ozon на этот номер телефона — получение по штрихкоду в пункте выдачи. Нужен аккаунт
+            Ozon на этом номере: если его нет, зарегистрируйтесь в приложении Ozon, это бесплатно.
+          </p>
+        ) : null}
         {useOzon ? (
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={other} onChange={(e) => setOther(e.target.checked)} />

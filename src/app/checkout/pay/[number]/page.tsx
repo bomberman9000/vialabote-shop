@@ -15,6 +15,8 @@ interface PaymentState {
   serverNow: string;
   paymentUrl: string | null;
   deliveryMaxDate?: string | null;
+  ozonOrderNumber?: string | null;
+  ozonPhoneEnd?: string | null;
 }
 
 const WINDOW_SEC = 10 * 60;
@@ -119,10 +121,23 @@ export default function PayPage() {
         <h1 className="mt-6 font-display text-3xl text-brand-800">Оплата прошла</h1>
         <p className="mt-2 text-brand-600">
           Заказ <b>{state.number}</b> на {formatPrice(state.totalAmount)} оплачен.{" "}
-          {ozonDate
-            ? `Доставка Ozon: получение в пункте выдачи не позднее ${ozonDate}, код получения придёт в приложение Ozon.`
-            : "Мы свяжемся с вами, чтобы согласовать доставку."}
+          {ozonDate ? `Получение в пункте выдачи Ozon не позднее ${ozonDate}.` : "Мы свяжемся с вами, чтобы согласовать доставку."}
         </p>
+        {ozonDate ? (
+          <div className="mt-6 w-full max-w-md rounded-2xl border border-brand-100 bg-white p-5 text-left text-sm text-brand-700">
+            <p className="font-semibold text-brand-900">Как получить заказ</p>
+            <ol className="mt-2 list-decimal space-y-1.5 pl-5">
+              <li>
+                Откройте приложение Ozon с номером{state.ozonPhoneEnd ? <> телефона, оканчивающимся на <b>…{state.ozonPhoneEnd}</b></> : " из заказа"}.
+                Нет аккаунта на этом номере — зарегистрируйтесь в приложении Ozon на этот номер, это бесплатно.
+              </li>
+              <li>
+                Раздел «Заказы»{state.ozonOrderNumber ? <> → заказ <b>{state.ozonOrderNumber}</b></> : " — заказ появится там, как только Ozon его примет"}.
+              </li>
+              <li>Когда Ozon напишет, что заказ в пункте выдачи, покажите там штрихкод из приложения.</li>
+            </ol>
+          </div>
+        ) : null}
         <Link href="/catalog" className="btn-primary mt-8">
           Продолжить покупки
         </Link>

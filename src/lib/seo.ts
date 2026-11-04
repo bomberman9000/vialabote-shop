@@ -56,6 +56,40 @@ export function productMetaDescription(base: string | null | undefined, title: s
   return withTail;
 }
 
+/**
+ * Title товара для выдачи — не длиннее 70 символов.
+ *
+ * Название из карточки бывает длиннее: «Увлажняющая сыворотка для лица с
+ * гиалуроновой кислотой 8 в 1 — Via Labote» — это 73 символа. Поисковик режет
+ * такой title по границе слова, и в выдаче остаётся обрывок без «8 в 1».
+ *
+ * Ручные варианты заданы для товаров, чьё название с признаком в title не влезает;
+ * остальные ужимаются по границе слова, а бренд в конце остаётся.
+ */
+const TITLE_MAX = 70;
+const TITLE_SUFFIX = " — Via Labote";
+
+const PRODUCT_TITLE_OVERRIDES: Record<string, string> = {
+  // Название из карточки: 60 символов + «8 в 1» не влезают вместе с брендом.
+  "serum-8-in-1-white-tea": "Сыворотка для лица с гиалуроновой кислотой 8 в 1 — Via Labote",
+};
+
+/** Обрезает текст по границе слова, чтобы он влез в лимит. */
+function fitTitle(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trimEnd();
+}
+
+export function productSeoTitle(product: { slug: string; title: string }): string {
+  const override = PRODUCT_TITLE_OVERRIDES[product.slug];
+  if (override) return override;
+  const full = `${product.title}${TITLE_SUFFIX}`;
+  if (full.length <= TITLE_MAX) return full;
+  return `${fitTitle(product.title, TITLE_MAX - TITLE_SUFFIX.length)}${TITLE_SUFFIX}`;
+}
+
 /** Копейки -> «1234.50» (schema.org ждёт число в рублях строкой с точкой). */
 const rub = (kopecks: number) => (kopecks / 100).toFixed(2);
 

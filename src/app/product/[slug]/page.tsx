@@ -13,7 +13,7 @@ import { concernTitle } from "@/lib/concerns";
 import { ProductGallery } from "@/components/product-gallery";
 import { Reveal } from "@/components/reveal";
 import { productShareImage } from "@/lib/share-image";
-import { breadcrumbJsonLd, jsonLdHtml, productJsonLd, productMetaDescription } from "@/lib/seo";
+import { breadcrumbJsonLd, jsonLdHtml, productJsonLd, productMetaDescription, productSeoTitle } from "@/lib/seo";
 import { CROSS_SELL, orderCrossSell } from "@/lib/cross-sell";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const product = await prisma.product.findUnique({ where: { slug: params.slug } });
   if (!product) return {};
-  const title = `${product.title} — Via Labote`;
+  const title = productSeoTitle(product);
   // Подзаголовок из карточки бывает короче 70 символов — в выдаче такое описание
   // показывают целиком, и обрезанный фрагмент ничего не сообщает.
   const description = productMetaDescription(product.subtitle || product.description, product.title);

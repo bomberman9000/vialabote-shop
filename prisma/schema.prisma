@@ -15,6 +15,12 @@ model User {
   email          String   @unique
   passwordHash   String
   phone          String?
+  // Получатель по умолчанию для оформления заказа (Ozon требует фамилию и имя раздельно)
+  // и последний пункт выдачи Ozon. Заполняются после заказа — см. lib/checkout-profile.ts.
+  lastName       String?
+  firstName      String?
+  middleName     String?
+  ozonPointId    String?
   role           String   @default("CUSTOMER")
   // Telegram operator binding — immutable numeric Telegram user ID, НЕ username.
   // Привязывается вручную владельцем (нет self-service подключения).
@@ -70,6 +76,9 @@ model Product {
   oldPrice    Int?
   imageUrl    String
   stock       Int         @default(0)
+  // Ozon Доставка: карточка этого товара на Ozon (FBS). Пусто — Ozon этот товар не доставляет.
+  ozonOfferId String? // артикул продавца на Ozon (offer_id)
+  ozonSku     String? // SKU Ozon (int64) строкой цифр: в JS/JSON без BigInt
   // CANONICAL LIFECYCLE: `status` — единственный source of truth
   // ("draft" | "published" | "archived"). `isActive` — legacy compatibility
   // field ТОЛЬКО для существующих storefront-запросов (каталог/PDP её не
@@ -275,8 +284,71 @@ model Order {
   items           OrderItem[]
   paymentId       String?
   paymentUrl      String?
+  // Согласия покупателя (152-ФЗ): момент (ISO), источник, версия документов
+  offerAcceptedAt String?
+  pdnConsentAt    String?
+  adsConsentAt    String?
+  consentSource   String?
+  legalVersion    String?
+  // Доставка, выбранная в checkout. null — заказы до Ozon и без выбора службы.
+  deliveryMethod  String? // "OZON_PVZ" | "OZON_COURIER"
+  deliveryPrice   Int? // копейки, уже включены в totalAmount
+  // Скидка за наборы (src/lib/bundles.ts), копейки; totalAmount уже за вычетом. bundles — какие наборы сработали.
+  bundleDiscount  Int         @default(0)
+  bundles         String?
+  deliveryMaxDate DateTime? // крайний срок получения, показанный покупателю (UTC)
+  ozon            OzonOrder?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+}
+
+// Заказ в Ozon Доставке, 1:1 с Order. Создаётся вместе с заказом сайта (PENDING), а заказ в Ozon —
+// ТОЛЬКО после подтверждённой оплаты (src/lib/delivery/ozon-orders.ts). Повтор вебхука второй заказ
+// не создаёт: orderId уникален, переход PENDING -> CREATING атомарный.
+// state: PENDING (ждёт оплаты/повтора) | CREATING | CREATED | FAILED (Ozon отказал — доставка не создана,
+// ручной разбор) | UNKNOWN (таймаут при создании: заказ в Ozon мог появиться — сверить в кабинете) |
+// CANCELLING | CANCELLED
+model OzonOrder {
+  id              String    @id @default(cuid())
+  orderId         String    @unique
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  state           String    @default("PENDING")
+  deliveryType    String // "PVZ" | "COURIER"
+  request         Json // выбор покупателя: точка или адрес с координатами, получатель
+  quote           Json // ответ checkout при оформлении (цена, сроки, отправления) — для аудита
+  ozonOrderNumber String?   @unique
+  postingNumbers  String[]
+  postings        Json? // последнее состояние отправлений (posting/fbs/get)
+  status          String? // сводный статус отправлений: delivering, delivered, cancelled, …
+  cancelState     String? // статус отмены в Ozon: «На подтверждении», «Подтверждена», …
+  returns         Json? // невыкупы и возвраты (returns/list)
+  refundState     String? // "REQUIRED" — деньги покупателю вернуть вручную (возврат Точки не реализован)
+  lastError       String? // метод, путь, HTTP-код — без тела ответа и данных покупателя
+  attempts        Int       @default(0)
+  claimedAt       DateTime?
+  syncedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([state])
+}
+
+// OAuth-токен частного приложения Ozon (методы доставки принимают только его). refresh_token
+// обновляется при каждом обмене, поэтому живёт в БД, а не в env: OZON_APP_REFRESH_TOKEN — лишь
+// стартовое значение. Одна строка id = "seller".
+model OzonOAuthToken {
+  id           String    @id
+  accessToken  String?
+  expiresAt    DateTime?
+  refreshToken String
+  scope        String?
+  updatedAt    DateTime  @updatedAt
+}
+
+/// Одноразовый state ссылки авторизации Ozon: создаёт scripts/ozon/oauth.ts url, /ozon-oauth удаляет до обмена code.
+model OzonOAuthState {
+  nonce     String   @id
+  createdAt DateTime @default(now())
 }
 
 model OrderItem {
@@ -288,4 +360,14 @@ model OrderItem {
   title     String
   price     Int
   quantity  Int
+}
+
+// Отправления FBS с маркетплейса Ozon (не заказы сайта), учтённые в остатке сайта — src/lib/stock/ozon-stock-sync.ts.
+// state: WRITTEN_OFF (списано с сайта) | RETURNED (отменено, вернули) | SKIPPED (отменено до учёта).
+model OzonMarketplacePosting {
+  postingNumber String   @id
+  state         String
+  items         Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

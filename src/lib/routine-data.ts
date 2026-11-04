@@ -23,10 +23,12 @@ export interface RoutineTag {
   routineRole: "cleanse" | "active" | "care";
 }
 
+// Подборки витрины задал владелец 2026-11-03 (на проде — в БД). Тоники pH 5.5/6.0 и масла «Бигмен» и
+// «без аромата» тоже в подборках, но шага подбора ухода у них нет — их связи живут только в БД.
 export const ROUTINE_TAGS: RoutineTag[] = [
   {
     slug: "hydrophilic-gel-oil",
-    concernSlugs: [],
+    concernSlugs: ["acne", "men"],
     skinTypeSlugs: [],
     draftSkinTypeSlugs: [], // очищающее масло — универсальный подготовительный шаг
     routineStep: 1,
@@ -42,7 +44,7 @@ export const ROUTINE_TAGS: RoutineTag[] = [
   },
   {
     slug: "inci-retinal-serum",
-    concernSlugs: ["anti-age"],
+    concernSlugs: ["acne", "anti-age", "dull-tone"],
     skinTypeSlugs: [],
     draftSkinTypeSlugs: ["oily", "combination", "normal"],
     routineStep: 2,
@@ -50,7 +52,7 @@ export const ROUTINE_TAGS: RoutineTag[] = [
   },
   {
     slug: "serum-resveratrol-vitamin-c",
-    concernSlugs: ["dull-tone"],
+    concernSlugs: ["anti-age", "dull-tone"],
     skinTypeSlugs: [],
     draftSkinTypeSlugs: ["oily", "dry", "combination", "normal"],
     routineStep: 2,
@@ -58,7 +60,7 @@ export const ROUTINE_TAGS: RoutineTag[] = [
   },
   {
     slug: "serum-8-in-1-white-tea",
-    concernSlugs: ["dryness"],
+    concernSlugs: ["dryness", "dull-tone", "men"],
     skinTypeSlugs: [],
     draftSkinTypeSlugs: [], // гиалуроновая кислота — обычно хорошо переносится любой кожей
     routineStep: 2,

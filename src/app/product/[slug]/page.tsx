@@ -1,16 +1,20 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CreditCard, Truck } from "lucide-react";
+import { ChevronLeft, CreditCard, Truck } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { formatPrice } from "@/lib/money";
 import { AddToCartButton } from "@/components/add-to-cart-button";
+import { FreeDeliveryProgress } from "@/components/free-delivery-progress";
 import { ProductCard, ProductGrid } from "@/components/product-card";
 import { toProductCardData } from "@/lib/product-card-data";
 import { resolveDisplayPrice } from "@/lib/pricing/product-price";
 import { concernTitle } from "@/lib/concerns";
 import { ProductGallery } from "@/components/product-gallery";
 import { Reveal } from "@/components/reveal";
+import { productShareImage } from "@/lib/share-image";
+import { breadcrumbJsonLd, jsonLdHtml, productJsonLd, productMetaDescription, productSeoTitle } from "@/lib/seo";
+import { CROSS_SELL, orderCrossSell } from "@/lib/cross-sell";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +25,26 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const product = await prisma.product.findUnique({ where: { slug: params.slug } });
   if (!product) return {};
+  const title = productSeoTitle(product);
+  // Подзаголовок из карточки бывает короче 70 символов — в выдаче такое описание
+  // показывают целиком, и обрезанный фрагмент ничего не сообщает.
+  const description = productMetaDescription(product.subtitle || product.description, product.title);
+  const image = productShareImage(product.imageUrl, product.title);
+  // openGraph страницы целиком заменяет общий из layout — siteName и locale повторяем.
   return {
-    title: `${product.title} — Via Labote`,
-    description: product.subtitle || product.description,
+    title,
+    description,
+    alternates: { canonical: `/product/${product.slug}` },
+    openGraph: {
+      type: "website",
+      siteName: "VIA LABOTE",
+      locale: "ru_RU",
+      url: `/product/${product.slug}`,
+      title,
+      description,
+      images: [image],
+    },
+    twitter: { card: "summary_large_image", title, description, images: [image.url] },
   };
 }
 
@@ -52,15 +73,24 @@ export default async function ProductPage({ params }: { params: { slug: string }
 
   if (!product || !product.isActive) notFound();
 
-  const related = await prisma.product.findMany({
+  // «С этим покупают»: пары из наборов владельца, затем товары тех же подборок, затем той же категории.
+  const pinned = CROSS_SELL[product.slug] ?? [];
+  const concernIds = product.concerns.map((c) => c.concernId);
+  const candidates = await prisma.product.findMany({
     where: {
       isActive: true,
-      categoryId: product.categoryId,
       id: { not: product.id },
+      OR: [
+        { slug: { in: pinned } },
+        ...(concernIds.length ? [{ concerns: { some: { concernId: { in: concernIds } } } }] : []),
+        { categoryId: product.categoryId },
+      ],
     },
-    take: 4,
-    include: { discount: true },
+    orderBy: { createdAt: "asc" },
+    include: { discount: true, concerns: { select: { concernId: true } } },
   });
+  const sameConcern = (c: (typeof candidates)[number]) => c.concerns.some((x) => concernIds.includes(x.concernId));
+  const related = orderCrossSell(product.slug, [...candidates.filter(sameConcern), ...candidates.filter((c) => !sameConcern(c))]);
 
   const actives = parseLines(product.activeIngredients);
   const howToUseSteps = parseLines(product.howToUse);
@@ -81,8 +111,36 @@ export default async function ProductPage({ params }: { params: { slug: string }
     return { name, text: rest.join(" — ") };
   };
 
+  const jsonLd = [
+    productJsonLd({ ...product, price: displayPrice.price, images: product.media.map((m) => m.url), categoryName: product.category.name }),
+    breadcrumbJsonLd([
+      { name: "Главная", path: "/" },
+      { name: "Каталог", path: "/catalog" },
+      { name: product.category.name, path: `/catalog?category=${product.category.slug}` },
+      { name: product.title, path: `/product/${product.slug}` },
+    ]),
+  ];
+
   return (
     <div className="flex flex-col gap-16 md:gap-24">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(jsonLd) }} />
+      {/* Выход со страницы товара: на телефоне кнопку «Назад» браузера не видно, а зашли могли из поиска или мессенджера. */}
+      <nav aria-label="Навигация" className="-mb-10 flex min-w-0 items-center gap-2 text-sm text-brand-500 md:-mb-16">
+        <Link
+          href={`/catalog?category=${product.category.slug}`}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brand-200 bg-white px-3 py-1.5 font-medium text-brand-800 hover:bg-brand-50"
+        >
+          <ChevronLeft aria-hidden className="h-4 w-4" />
+          Каталог
+        </Link>
+        <Link href={`/catalog?category=${product.category.slug}`} className="hidden shrink-0 hover:text-brand-800 sm:inline">
+          {product.category.name}
+        </Link>
+        <span aria-hidden className="hidden sm:inline">/</span>
+        <span className="hidden truncate text-brand-700 sm:inline" aria-current="page">
+          {product.title}
+        </span>
+      </nav>
       <div className="grid gap-8 md:grid-cols-[1.05fr_0.95fr] md:gap-12 lg:gap-16">
         {/* GALLERY — sticky на desktop, пока читается описание */}
         <div className="md:sticky md:top-28 md:self-start">
@@ -133,6 +191,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
               stock: product.stock,
             }}
           />
+          <FreeDeliveryProgress className="max-w-md" />
 
           {actives.length > 0 ? (
             <div className="flex flex-col gap-2.5 border-t border-brand-100 pt-5">
@@ -161,8 +220,8 @@ export default async function ProductPage({ params }: { params: { slug: string }
           ) : null}
 
           <div className="flex flex-col gap-2 border-t border-brand-100 pt-5 text-[13px] text-brand-600">
-            <span className="inline-flex items-center gap-2.5"><Truck size={16} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Доставка по России курьером и в пункты выдачи</span>
-            <span className="inline-flex items-center gap-2.5"><CreditCard size={16} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Безопасная онлайн-оплата картой через ЮKassa</span>
+            <span className="inline-flex items-center gap-2.5"><Truck size={16} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Доставка по России в пункты выдачи Ozon</span>
+            <span className="inline-flex items-center gap-2.5"><CreditCard size={16} strokeWidth={1.6} aria-hidden="true" className="shrink-0 text-gold-500" />Безопасная онлайн-оплата картой через Точка Банк</span>
           </div>
         </div>
       </div>
@@ -231,20 +290,20 @@ export default async function ProductPage({ params }: { params: { slug: string }
           ) : null}
           <PdpRow title="Доставка и оплата">
             <p className="max-w-[62ch] text-[15px] leading-relaxed text-brand-700">
-              Доставка по России курьером и в пункты выдачи. Онлайн-оплата картой через ЮKassa —
+              Доставка по России в пункты выдачи Ozon — цена и срок видны до оплаты. Онлайн-оплата картой через Точка Банк —
               подтверждение оплаты приходит сразу после списания средств.
             </p>
           </PdpRow>
         </div>
       </Reveal>
 
-      {/* CROSS-SELL — только реальная связь "тот же уход/категория", без выдуманных routine-шагов */}
+      {/* CROSS-SELL — пары из наборов владельца, затем те же подборки и категория */}
       {related.length > 0 ? (
         <Reveal>
         <section aria-labelledby="related-title">
           <div className="mb-8 flex flex-col gap-2">
             <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">Рекомендации</p>
-            <h2 id="related-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">Дополните уход</h2>
+            <h2 id="related-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">С этим покупают</h2>
           </div>
           <ProductGrid>
             {related.map((p) => (

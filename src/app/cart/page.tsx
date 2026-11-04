@@ -5,9 +5,13 @@ import Image from "next/image";
 import { Minus, Plus, X } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { formatPrice } from "@/lib/money";
+import { FreeDeliveryProgress } from "@/components/free-delivery-progress";
+import { CartBundles } from "@/components/cart-bundles";
+import { useCartTotals } from "@/lib/use-cart-totals";
 
 export default function CartPage() {
-  const { items, removeItem, setQuantity, totalAmount } = useCart();
+  const { items, removeItem, setQuantity } = useCart();
+  const { goodsAmount: totalAmount } = useCartTotals();
 
   if (items.length === 0) {
     return (
@@ -90,6 +94,8 @@ export default function CartPage() {
       </div>
 
       <div className="card flex flex-col items-end gap-3 p-6">
+        <CartBundles className="max-w-md self-stretch sm:self-end" />
+        <FreeDeliveryProgress className="max-w-md self-stretch sm:self-end" />
         <p className="text-lg">
           Итого: <span className="font-semibold text-brand-800">{formatPrice(totalAmount)}</span>
         </p>

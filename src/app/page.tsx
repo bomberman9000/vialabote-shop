@@ -9,6 +9,10 @@ import { Reveal } from "@/components/reveal";
 import { toProductCardData } from "@/lib/product-card-data";
 import { Hero } from "@/components/hero";
 import { concernTitle, CONCERN_VISUALS } from "@/lib/concerns";
+import { jsonLdHtml, storeJsonLd } from "@/lib/seo";
+import { applyBundles, BUNDLE_SHOWCASE, BUNDLES } from "@/lib/bundles";
+import { resolveDisplayPrice } from "@/lib/pricing/product-price";
+import { BundleOffers, type BundleOffer } from "@/components/bundle-offers";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +64,18 @@ export default async function HomePage() {
   // неё — фото реального опубликованного товара. Потребность без единого
   // видимого товара плитку не получает, поэтому архивация SKU не оставляет
   // ссылку на пустой фильтр, а новый размеченный товар подхватывается сам.
+  // Наборы −10% для витрины: цена товара — как на карточке, скидка — та же функция, что у корзины и сервера.
+  const bySlug = new Map(products.map((p) => [p.slug, p]));
+  const bundleOffers: BundleOffer[] = BUNDLES.flatMap((b) => {
+    const show = BUNDLE_SHOWCASE[b.id];
+    const items = (show?.slugs ?? []).map((slug) => bySlug.get(slug)).filter((p): p is NonNullable<typeof p> => Boolean(p));
+    if (!show || items.length !== show.slugs.length) return [];
+    const priced = items.map((p) => ({ productId: p.id, slug: p.slug, title: p.title, price: resolveDisplayPrice(p).price, imageUrl: p.imageUrl, stock: p.stock }));
+    const { applied } = applyBundles(priced.map((i) => ({ slug: i.slug, price: i.price, quantity: 1 })));
+    const hit = applied.find((x) => x.id === b.id);
+    return hit ? [{ id: b.id, title: b.title, subtitle: show.subtitle, percent: b.percent, items: priced, discount: hit.discount }] : [];
+  });
+
   const concerns = await prisma.concern.findMany({ orderBy: { name: "asc" } });
   const concernTiles = (
     await Promise.all(
@@ -83,6 +99,7 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-14 md:gap-20">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(storeJsonLd()) }} />
       <Hero />
 
       {/* WHY VIALABOTE — реальные формулировки бренда */}
@@ -102,6 +119,22 @@ export default async function HomePage() {
           </div>
         ))}
       </section>
+
+      {/* НАБОРЫ −10% — заметно, сразу после trust-блока */}
+      {bundleOffers.length > 0 ? (
+        <Reveal>
+          <section aria-labelledby="bundles-title">
+            <div className="mb-8 flex flex-col gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-gold-500">Выгоднее вместе</p>
+              <h2 id="bundles-title" className="text-[1.75rem] leading-tight text-brand-900 sm:text-[2.1rem]">
+                Комбо-уходы со скидкой −10%
+              </h2>
+              <p className="text-sm text-brand-600">Как советуют создатели VIA LABOTE: средства, которые работают в паре. Скидка применяется сама, когда оба товара в корзине.</p>
+            </div>
+            <BundleOffers offers={bundleOffers} />
+          </section>
+        </Reveal>
+      ) : null}
 
       {/* BESTSELLERS — сразу после hero и trust-блока */}
       <Reveal>

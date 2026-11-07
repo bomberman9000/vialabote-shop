@@ -102,6 +102,12 @@ model Product {
   concerns    ProductConcern[]
   discount    Discount?
   media       MediaAsset[]
+
+  // Индексы каталога и админки: фильтр по статусу/активности, выборка по категории
+  // (audit-2026-11-07: к.13).
+  @@index([status])
+  @@index([isActive])
+  @@index([categoryId])
 }
 
 // Скидка 1:1 с товаром. После endsAt перестаёт участвовать в effectivePrice
@@ -210,6 +216,10 @@ model AuditLog {
   before     String? // JSON.stringify — SQLite без нативного Json
   after      String? // JSON.stringify
   createdAt  DateTime @default(now())
+
+  // Журнал по конкретной сущности и по времени (audit-2026-11-07: к.13).
+  @@index([entityId])
+  @@index([createdAt])
 }
 
 // Журнал движений склада: ЕДИНСТВЕННЫЙ журнал для сайта и бота. Каждое изменение
@@ -300,6 +310,13 @@ model Order {
   ozon            OzonOrder?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+
+  // Индексы под реальные запросы (audit-2026-11-07: к.13 — «индексов нет ни на одной модели»).
+  // paymentId — по нему ищет заказ каждый платёжный вебхук (полный скан Order без индекса).
+  @@index([paymentId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([status])
 }
 
 // Заказ в Ozon Доставке, 1:1 с Order. Создаётся вместе с заказом сайта (PENDING), а заказ в Ozon —
@@ -360,6 +377,10 @@ model OrderItem {
   title     String
   price     Int
   quantity  Int
+
+  // Связи заказ↔товар: выборка позиций заказа и позиций товара (audit-2026-11-07: к.13).
+  @@index([orderId])
+  @@index([productId])
 }
 
 // Отправления FBS с маркетплейса Ozon (не заказы сайта), учтённые в остатке сайта — src/lib/stock/ozon-stock-sync.ts.

@@ -1,5 +1,7 @@
 "use client";
 
+import { withCsrf } from "@/lib/csrf-client";
+
 export function ProductRowActions({
   productId,
   isActive,
@@ -12,7 +14,7 @@ export function ProductRowActions({
   async function toggleActive() {
     const res = await fetch(`/api/admin/products/${productId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ action: isActive ? "archive" : "publish", expectedVersion: version }),
     });
     if (!res.ok) {
@@ -30,7 +32,7 @@ export function ProductRowActions({
     if (!confirm("Удалить товар?")) return;
     const res = await fetch(`/api/admin/products/${productId}`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ expectedVersion: version }),
     });
     if (!res.ok) {

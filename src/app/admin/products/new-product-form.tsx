@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { withCsrf } from "@/lib/csrf-client";
 
 function slugify(text: string): string {
   return text
@@ -30,7 +31,7 @@ export function NewProductForm() {
 
     const res = await fetch("/api/admin/products", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         title: form.title,
         slug: slugify(form.title) + "-" + Date.now().toString(36),

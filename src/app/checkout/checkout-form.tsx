@@ -12,6 +12,7 @@ import { customerDeliveryPrice, FREE_DELIVERY_FROM_KOPECKS } from "@/lib/deliver
 import type { CheckoutProfile } from "@/lib/checkout-profile";
 import type { MapTiles } from "@/lib/delivery/map-tiles";
 import { OzonDelivery, type OzonSelection } from "./ozon-delivery";
+import { withCsrf } from "@/lib/csrf-client";
 import { CartBundles } from "@/components/cart-bundles";
 import { useCartTotals } from "@/lib/use-cart-totals";
 
@@ -248,7 +249,7 @@ export function CheckoutForm({ profile }: { profile: CheckoutProfile | null }) {
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withCsrf({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           customerName: `${name.firstName} ${name.lastName}`,
           customerNameParts: name,

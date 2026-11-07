@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { withCsrf } from "@/lib/csrf-client";
 
 // Порядок жёстко зафиксирован: файл сначала проходит contract validation +
 // storage через /api/admin/media (attachMedia), и только ПОТОМ, с уже
@@ -30,7 +31,7 @@ export function NewBannerForm() {
     uploadData.set("file", file);
     uploadData.set("purpose", "HERO_DESKTOP");
 
-    const uploadRes = await fetch("/api/admin/media", { method: "POST", body: uploadData });
+    const uploadRes = await fetch("/api/admin/media", { method: "POST", headers: withCsrf(), body: uploadData });
     if (!uploadRes.ok) {
       const body = await uploadRes.json().catch(() => ({}));
       setBusy(false);
@@ -42,7 +43,7 @@ export function NewBannerForm() {
 
     const createRes = await fetch("/api/admin/banners", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ name, placement, desktopMediaId: media.id, headline: headline || undefined }),
     });
     setBusy(false);

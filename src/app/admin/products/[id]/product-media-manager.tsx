@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { withCsrf } from "@/lib/csrf-client";
 
 interface MediaItem {
   id: string;
@@ -40,7 +41,7 @@ export function ProductMediaManager({ productId, media }: { productId: string; m
     formData.set("purpose", purpose);
     formData.set("isPrimary", String(isPrimary));
 
-    const res = await fetch(`/api/admin/products/${productId}/media`, { method: "POST", body: formData });
+    const res = await fetch(`/api/admin/products/${productId}/media`, { method: "POST", headers: withCsrf(), body: formData });
     setBusy(false);
 
     if (!res.ok) {
@@ -55,7 +56,7 @@ export function ProductMediaManager({ productId, media }: { productId: string; m
 
   async function setPrimary(mediaId: string) {
     setBusy(true);
-    const res = await fetch(`/api/admin/media/${mediaId}`, { method: "PATCH" });
+    const res = await fetch(`/api/admin/media/${mediaId}`, { method: "PATCH", headers: withCsrf() });
     setBusy(false);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -68,7 +69,7 @@ export function ProductMediaManager({ productId, media }: { productId: string; m
   async function remove(mediaId: string) {
     if (!confirm("Удалить изображение?")) return;
     setBusy(true);
-    const res = await fetch(`/api/admin/media/${mediaId}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/media/${mediaId}`, { method: "DELETE", headers: withCsrf() });
     setBusy(false);
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

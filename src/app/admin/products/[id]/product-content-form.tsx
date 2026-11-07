@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { withCsrf } from "@/lib/csrf-client";
 
 interface ContentFields {
   title: string;
@@ -31,7 +32,7 @@ export function ProductContentForm({
     setError(null);
     const res = await fetch(`/api/admin/products/${productId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ action: "update", expectedVersion: version, ...form }),
     });
     setBusy(false);

@@ -26,9 +26,12 @@ const on = () => {
   vi.stubEnv("OZON_APP_CLIENT_SECRET", "secret");
   vi.stubEnv("OZON_CHECKOUT_ENABLED", "1");
 };
-const get = (url: string, ip = "10.0.0.1") => new Request(`http://localhost${url}`, { headers: { "x-forwarded-for": ip } });
+// Цепочка X-Forwarded-For как в бою: <клиент>, <наш прокси> — два доверенных хопа (edge + VM),
+// см. clientKey (audit-2026-11-07: к.11).
+const chain = (ip: string) => `${ip}, 192.0.2.254`;
+const get = (url: string, ip = "10.0.0.1") => new Request(`http://localhost${url}`, { headers: { "x-forwarded-for": chain(ip) } });
 const post = (url: string, body: unknown, ip = "10.0.0.1") =>
-  new Request(`http://localhost${url}`, { method: "POST", body: JSON.stringify(body), headers: { "x-forwarded-for": ip } });
+  new Request(`http://localhost${url}`, { method: "POST", body: JSON.stringify(body), headers: { "x-forwarded-for": chain(ip) } });
 
 const POINTS = {
   points: [
@@ -280,7 +283,8 @@ describe("проверка, расчёт, ограничение частоты"
       const spoofed = new Request("http://localhost/api/delivery/ozon/quote", {
         method: "POST",
         body: JSON.stringify(quoteBody()),
-        headers: { "x-forwarded-for": `203.0.113.${i}, 10.9.9.9` }, // левое — от клиента, правое — от нашего прокси
+        // слева — подделка клиента, дальше настоящий клиент и наш прокси: ключ лимита не меняется
+        headers: { "x-forwarded-for": `203.0.113.${i}, 10.9.9.9, 192.0.2.253` },
       });
       codes.push((await quote.POST(spoofed)).status);
     }
@@ -290,19 +294,23 @@ describe("проверка, расчёт, ограничение частоты"
   });
 
   it("адрес клиента: X-Real-IP не читается (наши прокси его не ставят), XFF — с учётом TRUSTED_PROXY_HOPS", async () => {
-    const { clientKey } = await import("@/lib/delivery/ozon-service");
+    const { clientKey, UNTRUSTED_CLIENT_KEY } = await import("@/lib/delivery/ozon-service");
     const r = (h: Record<string, string>) => new Request("http://x", { headers: h });
-    expect(clientKey(r({ "x-real-ip": "198.51.100.7", "x-forwarded-for": "1.1.1.1" }))).toBe("1.1.1.1");
-    expect(clientKey(r({ "x-forwarded-for": "6.6.6.6, 1.1.1.1, 2.2.2.2" }))).toBe("2.2.2.2");
-    // edge + VM дописывают XFF -> 2 доверенных прокси: клиент — второй справа, подделка слева игнорируется
+    // edge + VM дописывают XFF -> 2 доверенных прокси: клиентский адрес — второй слева,
+    // подделка клиента слева игнорируется (audit-2026-11-07: к.11)
+    expect(clientKey(r({ "x-forwarded-for": "6.6.6.6, 1.1.1.1, 2.2.2.2" }))).toBe("1.1.1.1");
+    expect(clientKey(r({ "x-forwarded-for": "1.1.1.1, 2.2.2.2" }))).toBe("1.1.1.1");
     expect(clientKey(r({ "x-forwarded-for": "6.6.6.6, 1.1.1.1, 2.2.2.2" }), { TRUSTED_PROXY_HOPS: "2" } as unknown as NodeJS.ProcessEnv)).toBe("1.1.1.1");
-    expect(clientKey(r({ "x-forwarded-for": "2.2.2.2" }), { TRUSTED_PROXY_HOPS: "2" } as unknown as NodeJS.ProcessEnv)).toBe("2.2.2.2");
-    expect(clientKey(r({ "x-real-ip": "198.51.100.7" }))).toBe("local");
+    expect(clientKey(r({ "x-forwarded-for": "1.1.1.1, 2.2.2.2" }), { TRUSTED_PROXY_HOPS: "1" } as unknown as NodeJS.ProcessEnv)).toBe("2.2.2.2");
+    // цепочка короче доверенной схемы — адрес ключом не становится (fail-closed)
+    expect(clientKey(r({ "x-real-ip": "198.51.100.7", "x-forwarded-for": "1.1.1.1" }))).toBe(UNTRUSTED_CLIENT_KEY);
+    expect(clientKey(r({ "x-forwarded-for": "2.2.2.2" }), { TRUSTED_PROXY_HOPS: "2" } as unknown as NodeJS.ProcessEnv)).toBe(UNTRUSTED_CLIENT_KEY);
+    expect(clientKey(r({ "x-real-ip": "198.51.100.7" }))).toBe(UNTRUSTED_CLIENT_KEY);
   });
 
   it("отклонённые запросы одного клиента не тратят общий потолок — остальные не страдают", async () => {
     const { allowRequest } = await import("@/lib/delivery/ozon-service");
-    const from = (ip: string) => new Request("http://x", { headers: { "x-forwarded-for": ip } });
+    const from = (ip: string) => new Request("http://x", { headers: { "x-forwarded-for": `${ip}, 192.0.2.254` } });
     let passedA = 0;
     for (let i = 0; i < 100; i++) if (allowRequest(from("10.1.1.1"), "t-global", 1)) passedA++;
     expect(passedA).toBe(1);

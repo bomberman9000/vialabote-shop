@@ -1,0 +1,142 @@
+# CI для vialabote-shop (audit-2026-11-07: к.41 — в проекте не было CI вообще).
+#
+# Что покрываем: typecheck, тесты (vitest), сборка (next build). Каждый джоб
+# обязан падать при ошибке — никаких `|| true` / `continue-on-error`.
+#
+# Ветки: `claude/ozon-delivery-prod` — живой боевой релиз, `main` — заброшена
+# (отстаёт на ~2.5 месяца), но PR могут открываться и туда, поэтому триггерим оба.
+#
+# Lint-джоба нет: в репозитории нет конфига eslint (`.eslintrc*` / `eslint.config.*`
+# отсутствуют), `next lint` без конфига интерактивен и в CI не отработает. Тот же
+# критерий применён в scripts/ci/zerohour-ci.sh (LINT=NOT_CONFIGURED). Если eslint
+# будет добавлен — добавить отдельный джоб `npx eslint .`.
+#
+# Node: 24 — ровно та версия, на которой сайт работает в проде
+# (ops/vps/site2-runtime-setup.sh: NODE_V=v24.21.0). Next.js 14.2 требует >= 18.17.
+#
+# Postgres нужен тестам и сборке, поэтому у обоих джобов свой одноразовый
+# контейнер postgres:16-alpine (сервис GitHub Actions, НЕ прод-БД):
+#  * тесты — часть тестов (telegram-панель и поллер, админ-команды, заказы) ходит
+#    в БД без гварда HAS_DB: без базы `npx vitest run` падает (проверено локально:
+#    9 failed / 536 passed); с базой — 757 passed;
+#  * сборка — /offer, /privacy, /returns и sitemap рендерятся на этапе build и
+#    ходят в БД за каталогом.
+# Схема поднимается `prisma db push` по prisma/schema.prisma (это НЕ миграции и
+# НЕ прод-БД: база живёт ровно время джоба), затем `npm run db:seed` — тот же
+# рецепт, что в scripts/ci/zerohour-ci.sh (там prisma migrate deploy; здесь
+# db push, чтобы в CI не гонять миграции).
+
+name: CI
+
+on:
+  push:
+    branches:
+      - claude/ozon-delivery-prod
+      - main
+  pull_request:
+    branches:
+      - claude/ozon-delivery-prod
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "1"
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Только CI-значения: никаких прод-секретов в репозитории и в логах.
+  NEXTAUTH_SECRET: "ci-only-not-a-secret"
+  NEXTAUTH_URL: "http://localhost:3000"
+  NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+  SEED_ADMIN_EMAIL: "ci-admin@ci.invalid"
+  SEED_ADMIN_PASSWORD: "ci-only-not-a-secret"
+
+jobs:
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: tsc --noEmit
+        run: npx tsc --noEmit --incremental false
+
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: vialabote_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d vialabote_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/vialabote_ci?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: prepare schema in throwaway postgres
+        run: npx prisma db push --skip-generate
+      - name: seed catalog
+        run: npm run --silent db:seed
+      - name: vitest run
+        run: npx vitest run
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: vialabote_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d vialabote_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/vialabote_ci?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: prepare schema in throwaway postgres
+        run: npx prisma db push --skip-generate
+      - name: seed catalog
+        run: npm run --silent db:seed
+      - name: next build
+        run: npx next build

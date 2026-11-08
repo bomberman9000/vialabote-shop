@@ -26,6 +26,11 @@ node scripts/media/hero-crop.mjs assets/product-media/editorial/vialabote-hero-b
 # 5. site icons from the owner-approved badge -> public/favicon.ico + public/icons/*
 #    (16/32/48 ICO, 32 and 512 px transparent PNG, 180 px apple-touch-icon on white)
 node scripts/media/favicons.mjs public/branding/vialabote-favicon.png public
+
+# 6. link previews for messengers (og:image, 1200×630 JPEG): shop banner + one per packshot
+#    -> public/og/vialabote-share.jpg, public/og/products/<packshot>.jpg (Manrope from Google Fonts).
+#    Re-run after adding a packshot; a product without its own preview falls back to the banner.
+node scripts/media/share-images.mjs public
 ```
 
 See `assets/product-media/PRODUCT-MEDIA-MANIFEST.md` for what each step does and the per-SKU results.

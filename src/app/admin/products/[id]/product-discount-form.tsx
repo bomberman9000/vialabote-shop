@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { withCsrf } from "@/lib/csrf-client";
 
 interface DiscountData {
   type: string;
@@ -35,7 +36,7 @@ export function ProductDiscountForm({
     setError(null);
     const res = await fetch(`/api/admin/products/${productId}/discount`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         expectedVersion: version,
         type,
@@ -58,7 +59,7 @@ export function ProductDiscountForm({
     setError(null);
     const res = await fetch(`/api/admin/products/${productId}/discount`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ expectedVersion: version }),
     });
     setBusy(false);

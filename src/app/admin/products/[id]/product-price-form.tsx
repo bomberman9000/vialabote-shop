@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { withCsrf } from "@/lib/csrf-client";
 
 export function ProductPriceForm({
   productId,
@@ -21,7 +22,7 @@ export function ProductPriceForm({
     setError(null);
     const res = await fetch(`/api/admin/products/${productId}/price`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ expectedVersion: version, price: Math.round(Number(priceRub) * 100) }),
     });
     setBusy(false);

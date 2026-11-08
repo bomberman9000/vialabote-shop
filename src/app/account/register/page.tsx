@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { withCsrf } from "@/lib/csrf-client";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -18,20 +19,22 @@ export default function RegisterPage() {
 
     const res = await fetch("/api/auth/register", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify(form),
-    });
+    }).catch(() => null);
 
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error || "Не удалось зарегистрироваться");
+    if (!res?.ok) {
+      // При 500 тело — не JSON: без catch кнопка навсегда оставалась в «Создаём аккаунт...».
+      const data = await res?.json().catch(() => null);
+      setError(data?.error || "Не удалось зарегистрироваться");
       setLoading(false);
       return;
     }
 
-    await signIn("credentials", { email: form.email, password: form.password, redirect: false });
+    // Аккаунт уже создан; если автоматический вход не прошёл — на форму входа, а не в кабинет.
+    const login = await signIn("credentials", { email: form.email, password: form.password, redirect: false });
     setLoading(false);
-    router.push("/account");
+    router.push(login?.ok ? "/account" : "/account/login");
     router.refresh();
   }
 
@@ -41,6 +44,7 @@ export default function RegisterPage() {
         <h1 className="text-xl font-semibold text-brand-800">Регистрация</h1>
         <input
           required
+          minLength={2}
           placeholder="Имя"
           className="input"
           value={form.name}
@@ -57,6 +61,7 @@ export default function RegisterPage() {
         <input
           required
           type="password"
+          minLength={6}
           placeholder="Пароль (мин. 6 символов)"
           className="input"
           value={form.password}

@@ -27,6 +27,7 @@ SVC=vialabote-shop
 UNIT=/etc/systemd/system/vialabote-shop.service
 APP_ENV=/etc/vialabote-shop/app.env
 PORT=3002
+PUBLIC_URL=https://shop.vialabote.ru
 DB_PORT=5433
 DB=vialabote_shop
 RUNUSER=/usr/sbin/runuser
@@ -82,8 +83,10 @@ cat > "$APP_ENV.tmp" <<EOF
 # vialabote-shop (SITE_2) runtime env — read by systemd as root. Do not copy.
 DATABASE_URL=$DATABASE_URL
 NEXTAUTH_SECRET=$NEXTAUTH_SECRET
+# NextAuth builds its redirect URLs and decides on Secure cookies from NEXTAUTH_URL: it must be
+# the public https address behind nginx, not the app port (logout used to land on 127.0.0.1).
+NEXTAUTH_URL=$PUBLIC_URL
 # Local-only until nginx/domain exist (next task):
-NEXTAUTH_URL=http://127.0.0.1:$PORT
 NEXT_PUBLIC_APP_URL=http://127.0.0.1:$PORT
 EOF
 # Keep the Telegram CMS settings written by site2-telegram-connect.sh.

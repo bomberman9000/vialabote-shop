@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { withCsrf } from "@/lib/csrf-client";
 
 export function BannerRowActions({
   bannerId,
@@ -35,7 +36,7 @@ export function BannerRowActions({
     return handle(
       fetch(`/api/admin/banners/${bannerId}/schedule`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: withCsrf({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           expectedVersion: version,
           startsAt: start ? new Date(start).toISOString() : null,
@@ -49,7 +50,7 @@ export function BannerRowActions({
     return handle(
       fetch(`/api/admin/banners/${bannerId}/publish`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: withCsrf({ "Content-Type": "application/json" }),
         body: JSON.stringify({ expectedVersion: version }),
       }),
     );
@@ -59,7 +60,7 @@ export function BannerRowActions({
     return handle(
       fetch(`/api/admin/banners/${bannerId}/archive`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: withCsrf({ "Content-Type": "application/json" }),
         body: JSON.stringify({ expectedVersion: version }),
       }),
     );

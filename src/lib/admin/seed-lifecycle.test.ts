@@ -69,6 +69,7 @@ const OWNER_PRICES: Record<string, number> = {
   "rosemary-hair-oil": 45000,
   "toner-serum-ph6": 52000,
   "toner-serum-ph55": 55000,
+  "body-butter-mimosa-cardamom": 59000, // 2026-11-03
 };
 // SKU без подтверждённого остатка: сид не выдумывает наличие (stock=0).
 const NO_CONFIRMED_STOCK = [
@@ -79,12 +80,13 @@ const NO_CONFIRMED_STOCK = [
   "rosemary-hair-oil",
   "toner-serum-ph6",
   "toner-serum-ph55",
+  "body-butter-mimosa-cardamom",
 ];
 
 describe("prisma/seed.ts — clean-checkout lifecycle", () => {
   it("публикует все SKU с owner-confirmed ценой и не выдумывает остаток", async () => {
     await import("../../../prisma/seed");
-    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(13));
+    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(14));
 
     const bySlug = new Map(recorded.productCreates.map((c) => [String(c.slug), c]));
     expect([...bySlug.keys()].sort()).toEqual(Object.keys(OWNER_PRICES).sort());
@@ -107,7 +109,7 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
   // категория и объём как на сайте бренда, packshot существует в public/.
   it("каталог совпадает с линейкой бренда: категория, объём, фото, контент", async () => {
     await import("../../../prisma/seed");
-    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(13));
+    await vi.waitFor(() => expect(recorded.productCreates.length).toBe(14));
     const expected: Record<string, { category: string; volume: string }> = {
       "serum-8-in-1-white-tea": { category: "syvorotki", volume: "50 мл" },
       "inci-retinal-serum": { category: "syvorotki", volume: "50 мл" },
@@ -122,6 +124,7 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
       "rosemary-hair-oil": { category: "uhod-za-volosami", volume: "50 мл" },
       "toner-serum-ph6": { category: "toniki", volume: "200 мл" },
       "toner-serum-ph55": { category: "toniki", volume: "200 мл" },
+      "body-butter-mimosa-cardamom": { category: "dlya-tela", volume: "200 мл" },
     };
     expect(new Map(recorded.categories.map((c) => [c.slug, c.name]))).toEqual(
       new Map([
@@ -130,6 +133,7 @@ describe("prisma/seed.ts — clean-checkout lifecycle", () => {
         ["dlya-muzhchin", "Для бороды"],
         ["uhod-za-volosami", "Для волос"],
         ["toniki", "Тоники"],
+        ["dlya-tela", "Для тела"],
       ]),
     );
     for (const create of recorded.productCreates) {

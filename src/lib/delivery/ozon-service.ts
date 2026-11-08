@@ -390,17 +390,57 @@ export async function quotePoints(
 const hits = new Map<string, { count: number; reset: number }>();
 
 /**
+ * Общий ключ для запросов, чей адрес нельзя достоверно определить: цепочка X-Forwarded-For
+ * короче доверенной схемы прокси (заголовок вырезан/подменён) или её нечем подтвердить.
+ * Все такие запросы делят ОДИН счётчик — адрес из недоверенной цепочки ключом не становится.
+ */
+export const UNTRUSTED_CLIENT_KEY = "untrusted";
+
+/**
+ * Сколько адресов в цепочке X-Forwarded-For дописывают НАШИ прокси.
+ * Схема: покупатель -> edge nginx -> VM nginx -> приложение; оба nginx ставят
+ * `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` (ops/dr/edge-setup.sh,
+ * ops/vps/site2-public-https.sh), поэтому приложение видит цепочку "<клиент>, <edge>" — 2 адреса.
+ * TRUSTED_PROXY_HOPS переопределяет (например 1, если edge выключен и проксирует только VM-nginx).
+ */
+export const DEFAULT_TRUSTED_PROXY_HOPS = 2;
+
+function trustedProxyHops(env: NodeJS.ProcessEnv): number {
+  const raw = env.TRUSTED_PROXY_HOPS?.trim();
+  if (!raw) return DEFAULT_TRUSTED_PROXY_HOPS;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 1 ? n : DEFAULT_TRUSTED_PROXY_HOPS;
+}
+
+/** Похоже ли значение на IP-адрес (IPv4 или IPv6). Мусор в цепочке ключом не становится. */
+function isIpLike(value: string): boolean {
+  const v4 = value.split(".");
+  if (v4.length === 4 && v4.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255)) return true;
+  return value.includes(":") && /^[0-9a-fA-F:.]+$/.test(value);
+}
+
+/**
  * Адрес клиента для ограничителя — из X-Forwarded-For, где каждый прокси дописывает адрес справа.
- * Значения левее доверенных прокси задаёт сам клиент, им не верим; X-Real-IP не читаем вовсе:
- * наши nginx (ops/dr/edge-setup.sh, vm-*.sh) его не ставят, и клиентский доходит до приложения как есть.
- * TRUSTED_PROXY_HOPS — сколько наших прокси дописывают XFF (по умолчанию 1: берём правое значение).
+ *
+ * Политика доверия (audit-2026-11-07: к.11 — «rate-limiter вырожден в глобальный ключ»):
+ *   - X-Real-IP не читаем вовсе: наши nginx его не ставят, а клиентский заголовок доходит как есть;
+ *   - доверенны только ПОСЛЕДНИЕ `hops` адресов цепочки — их дописали наши прокси;
+ *   - ключ лимита = адрес, записанный самым внешним доверенным прокси, т.е. цепочка минус `hops`
+ *     адресов справа. Всё левее задал сам клиент — мы его игнорируем: подмена заголовка не двигает ключ;
+ *   - fail-closed: если цепочка короче `hops` (запрос не прошёл через всю нашу схему прокси или
+ *     заголовок подделан), адрес из цепочки НЕ становится ключом — все такие запросы делят общий
+ *     счётчик UNTRUSTED_CLIENT_KEY. Иначе подмена X-Forwarded-For была бы обходом лимита:
+ *     свой адрес -> свой счётчик.
  */
 export function clientKey(req: Request, env: NodeJS.ProcessEnv = process.env): string {
-  const xff = req.headers.get("x-forwarded-for")?.split(",").map((s) => s.trim()).filter(Boolean);
-  if (!xff?.length) return "local";
-  const n = Number(env.TRUSTED_PROXY_HOPS);
-  const hops = Number.isInteger(n) && n >= 1 ? n : 1;
-  return xff[Math.max(0, xff.length - hops)];
+  const hops = trustedProxyHops(env);
+  const chain = (req.headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (chain.length < hops) return UNTRUSTED_CLIENT_KEY;
+  const candidate = chain[chain.length - hops];
+  return isIpLike(candidate) ? candidate : UNTRUSTED_CLIENT_KEY;
 }
 
 /** Все лимиты сначала проверяются и только при успехе списываются: отклонённый запрос ничего не тратит. */

@@ -7,6 +7,7 @@ import { findCity, RU_CITIES } from "@/lib/delivery/ru-cities";
 import type { LatLong } from "@/lib/delivery/ozon";
 import type { MapTiles } from "@/lib/delivery/map-tiles";
 import { OzonMap } from "./ozon-map";
+import { withCsrf } from "@/lib/csrf-client";
 
 /** Центр карты, пока покупатель не выбрал ни город, ни «рядом со мной». */
 const DEFAULT_CENTER: LatLong = { lat: 55.7558, long: 37.6173 };
@@ -236,7 +237,7 @@ export function OzonDelivery({
     const key = itemsKey;
     fetch("/api/delivery/ozon/quotes", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ items, mapPointIds: ids }),
     })
       .then((r) => (r.ok ? r.json() : null))
@@ -279,7 +280,7 @@ export function OzonDelivery({
     setMessage(null);
     fetch("/api/delivery/ozon/quote", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ items, destination: { type: "PVZ", mapPointId: point.id } }),
     })
       .then((r) => r.json())

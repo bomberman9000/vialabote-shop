@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { withCsrf } from "@/lib/csrf-client";
 
 export function ProductLifecycleActions({
   productId,
@@ -19,7 +20,7 @@ export function ProductLifecycleActions({
     setBusy(true);
     const res = await fetch(`/api/admin/products/${productId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ action, expectedVersion: version }),
     });
     setBusy(false);
@@ -40,7 +41,7 @@ export function ProductLifecycleActions({
     setBusy(true);
     const res = await fetch(`/api/admin/products/${productId}`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: withCsrf({ "Content-Type": "application/json" }),
       body: JSON.stringify({ expectedVersion: version }),
     });
     setBusy(false);
